@@ -163,12 +163,10 @@ def run(
             origin_code = resolve_airport_code(origin)
             destination_code = resolve_airport_code(destination_city)
             flight_offers = search_flights_via_mcp(origin_code, destination_code, start_date, end_date, cabin_class)
-            # Same link for every offer (a route search, not a per-airline filter — see
-            # build_airline_search_link's docstring for why per-airline filtering was dropped) —
-            # computed once rather than repeated identically per offer.
-            route_link = build_airline_search_link(origin_code, destination_code, start_date, end_date, cabin_class)
             for offer in flight_offers:
-                offer["search_link"] = route_link
+                offer["search_link"] = build_airline_search_link(
+                    origin_code, destination_code, start_date, end_date, cabin_class, offer["airline"]
+                )
             flight_recommendation = _recommend_flight(flight_offers, cabin_class, budget_level)
             flight_search_status = "ok"
             last_exc = None

@@ -87,17 +87,24 @@ def build_flight_links(
     }
 
 
+SANDBOX_ONLY_CARRIERS = {"Duffel Airways"}  # Duffel's own placeholder — not a real airline, no
+# real search engine can filter to it, unlike every actual carrier the sandbox also returns
+# (American Airlines, British Airways, Iberia, Qatar Airways, etc.)
+
+
 def build_airline_search_link(
-    origin_code: str, destination_code: str, start_date: str, end_date: str, cabin_class: str,
+    origin_code: str, destination_code: str, start_date: str, end_date: str, cabin_class: str, airline_name: str = "",
 ) -> str:
-    """A per-offer search link for the route. NOT a link to that exact sandbox flight — Duffel's
-    test-mode prices/schedules aren't real bookable flights, so there's nothing genuine to
-    deep-link to the way a hotel's real Google Maps listing is. Originally tried appending the
-    airline name to the query text; dropped after live user testing showed it landed on Google
-    Flights' generic homepage instead of results — likely because "Duffel Airways" (the sandbox's
-    own placeholder carrier) isn't a real airline Google's parser can recognize, and airline-name
-    filtering was never actually verified to work for the real carriers either. Reusing the exact
-    query shape already confirmed working for the aggregate "compare more" links is more honest
-    than promising a per-airline filter this URL scheme has no documented support for."""
+    """A per-offer search link. NOT a link to that exact sandbox flight/price — Duffel's test-mode
+    schedules aren't real bookable flights, so there's nothing genuine to deep-link to the way a
+    hotel's real Google Maps listing is. Includes the airline name in Google Flights' natural-
+    language query for real carriers, since that's a well-established, human-used query shape
+    ("flights to Tokyo on British Airways") — but only for real carriers: Duffel's own sandbox
+    placeholder ("Duffel Airways") isn't a real airline any search engine can recognize, and an
+    earlier version that always included the airline name landed on Google Flights' generic
+    homepage for exactly that entry, so it's excluded specifically rather than dropping the
+    airline filter for every carrier because one of them isn't real."""
     query = f"Flights from {origin_code} to {destination_code} on {start_date} returning {end_date}, {cabin_class.lower()} class"
+    if airline_name and airline_name not in SANDBOX_ONLY_CARRIERS:
+        query += f" on {airline_name}"
     return f"https://www.google.com/travel/flights?q={quote(query)}"
