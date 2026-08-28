@@ -6,7 +6,7 @@ added specifically to demonstrate that pattern, not a retrofit of the already-te
 
 from mcp.server.fastmcp import FastMCP
 
-from voyagent.tools.amadeus import search_flights as _search_flights_impl
+from voyagent.tools.duffel import search_flights as _search_flights_impl
 
 mcp = FastMCP("voyagent-flights")
 
@@ -20,10 +20,11 @@ def search_flights(
     cabin_class: str = "Economy",
     max_results: int = 5,
 ) -> list[dict]:
-    """Search real flight offers via Amadeus. origin/destination are IATA airport codes
-    (e.g. JFK, NRT). Dates are YYYY-MM-DD. cabin_class one of: Economy, Premium Economy,
-    Business, First. Returns a list of real offers with price, currency, airline, stop count,
-    and duration — raises if Amadeus isn't configured or the request fails."""
+    """Search real flight offers via Duffel (test/sandbox mode). origin/destination are IATA
+    airport codes (e.g. JFK, NRT). Dates are YYYY-MM-DD. cabin_class one of: Economy, Premium
+    Economy, Business, First. Returns a list of real offers with price, currency, airline, stop
+    count, and duration, cheapest first — raises if Duffel isn't configured or the request fails.
+    Note: sandbox prices, not live market fares."""
     return _search_flights_impl(origin, destination, departure_date, return_date, cabin_class, max_results)
 
 

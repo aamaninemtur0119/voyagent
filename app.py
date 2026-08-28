@@ -64,6 +64,7 @@ def render_result_cards(result: dict) -> None:
         st.markdown("### ✈️ Flights")
         status = logistics.get("flight_search_status", "not_attempted")
         if status == "ok" and logistics.get("flight_offers"):
+            st.caption("⚠️ Sandbox data (Duffel test mode) — real request/response, not live market fares.")
             if logistics.get("flight_recommendation"):
                 st.info(f"**Recommended:** {logistics['flight_recommendation']}")
             for o in logistics["flight_offers"]:

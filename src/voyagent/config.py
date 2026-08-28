@@ -9,8 +9,7 @@ class Settings(BaseSettings):
     pinecone_api_key: str
     pinecone_index_name: str
     google_places_api_key: str
-    amadeus_api_key: str = ""
-    amadeus_api_secret: str = ""
+    duffel_api_key: str = ""
 
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1024

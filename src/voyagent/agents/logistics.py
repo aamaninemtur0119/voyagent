@@ -1,7 +1,9 @@
-"""Logistics Agent — flights (real search via an MCP tool, Amadeus-backed) + accommodation (live
-Google Places), each with a genuine judgment step: an LLM picks and justifies the best option(s)
-for this specific traveler, grounded only in the actual returned fields — never inventing a price,
-amenity, or fact the data doesn't contain.
+"""Logistics Agent — flights (real search via an MCP tool, Duffel-backed test/sandbox mode) +
+accommodation (live Google Places), each with a genuine judgment step: an LLM picks and justifies
+the best option(s) for this specific traveler, grounded only in the actual returned fields — never
+inventing a price, amenity, or fact the data doesn't contain. Note: Duffel's free test mode returns
+real API responses over real airline/route data, but sandbox prices, not live market fares —
+disclosed as such in the UI, not presented as real live pricing.
 
 Flights are the one tool in Voyagent exposed via the Model Context Protocol rather than a direct
 Python import (see mcp_servers/flights_server.py) — new capability, added specifically to
@@ -43,12 +45,18 @@ async def _call_flight_mcp_tool(**kwargs) -> list[dict]:
     tool = next(t for t in tools if t.name == "search_flights")
     result = await tool.ainvoke(kwargs)
 
-    # MCP surfaces a tool-level failure as a text-content error block, not a raised exception —
-    # translate it into a real one so the caller's normal exception handling applies.
-    text = result[0]["text"] if isinstance(result, list) and result else ""
-    if text.startswith("Error executing tool"):
-        raise RuntimeError(text)
-    return json.loads(text)
+    if not isinstance(result, list) or not result:
+        return []
+
+    # MCP surfaces a tool-level failure as a single text-content error block, not a raised
+    # exception — translate it into a real one so the caller's normal exception handling applies.
+    first_text = result[0].get("text", "")
+    if first_text.startswith("Error executing tool"):
+        raise RuntimeError(first_text)
+
+    # A successful list[dict] return comes back as ONE text-content block PER LIST ITEM
+    # (verified empirically, not assumed) — not one block containing the whole JSON array.
+    return [json.loads(block["text"]) for block in result]
 
 
 def search_flights_via_mcp(
@@ -162,7 +170,7 @@ def run(
         except Exception as e:  # noqa: BLE001 - real flight search is best-effort; links are the guaranteed fallback
             last_exc = e
     if last_exc is not None:
-        flight_search_status = "not_configured" if "AMADEUS_API_KEY" in str(last_exc) else f"failed: {last_exc}"
+        flight_search_status = "not_configured" if "DUFFEL_API_KEY" in str(last_exc) else f"failed: {last_exc}"
 
     hotels = search_accommodation(destination_city, destination_country)
     if budget_level != "Any":
