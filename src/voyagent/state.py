@@ -35,6 +35,13 @@ class TripState(TypedDict, total=False):
     agent_trace: Annotated[list[TraceEntry], operator.add]
     errors: Annotated[list[str], operator.add]
 
-    # --- human-in-the-loop, only around the one real write action ---
+    # --- human-in-the-loop: two independent write actions, each gated separately ---
     calendar_approved: bool | None
     calendar_result: dict | None
+    export_approved: bool | None
+    export_result: dict | None
+
+    # --- adaptive replanning: a rejection with feedback loops back to Logistics/Experience
+    # rather than just stopping, capped to prevent an infinite loop ---
+    replan_requested: bool
+    replan_count: int

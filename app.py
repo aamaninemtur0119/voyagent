@@ -132,24 +132,47 @@ if st.session_state.trip_result:
 
     if st.session_state.awaiting_approval:
         interrupt_payload = result["__interrupt__"][0].value
-        st.subheader("🖐️ Human approval needed")
-        st.write(interrupt_payload["message"])
-        for d in interrupt_payload["deadlines"]:
-            st.markdown(f"- **{d['title']}** — {d['date']} _( {d['basis']} )_ — {d['reason']}")
+        itype = interrupt_payload["type"]
 
-        ac1, ac2 = st.columns(2)
-        if ac1.button("✅ Approve — write to Google Calendar", type="primary", use_container_width=True):
-            with st.spinner("Resuming graph, writing to calendar..."):
-                final = graph.invoke(Command(resume={"approved": True}), config=config)
+        def resume(decision: dict) -> None:
+            with st.spinner("Resuming..."):
+                final = graph.invoke(Command(resume=decision), config=config)
             st.session_state.trip_result = final
-            st.session_state.awaiting_approval = False
+            st.session_state.awaiting_approval = bool(final.get("__interrupt__"))
             st.rerun()
-        if ac2.button("❌ Reject — don't write anything", use_container_width=True):
-            with st.spinner("Resuming graph..."):
-                final = graph.invoke(Command(resume={"approved": False}), config=config)
-            st.session_state.trip_result = final
-            st.session_state.awaiting_approval = False
-            st.rerun()
+
+        if itype == "calendar_write_approval":
+            st.subheader("🖐️ Human approval needed — Calendar")
+            st.write(interrupt_payload["message"])
+            for d in interrupt_payload.get("deadlines", []):
+                st.markdown(f"- **{d['title']}** — {d['date']} _( {d['basis']} )_ — {d['reason']}")
+
+            feedback = ""
+            if interrupt_payload.get("replans_remaining", 0) > 0:
+                feedback = st.text_input(
+                    "Or describe a change instead (e.g. 'push the trip back a month', 'cheapest hotels only') "
+                    f"— {interrupt_payload['replans_remaining']} replan(s) left",
+                    key=f"feedback_{interrupt_payload.get('replans_so_far', 0)}",
+                )
+            else:
+                st.caption("Replan limit reached — approve or reject only.")
+
+            ac1, ac2 = st.columns(2)
+            if ac1.button("✅ Approve — write to Google Calendar", type="primary", use_container_width=True):
+                resume({"approved": True})
+            if ac2.button("❌ Reject" + (" — replan" if feedback.strip() else ""), use_container_width=True):
+                resume({"approved": False, "feedback": feedback})
+
+        elif itype == "export_approval":
+            st.subheader("🖐️ Human approval needed — Save Itinerary")
+            st.write(interrupt_payload["message"])
+            st.caption(interrupt_payload.get("preview", "") + "...")
+
+            ec1, ec2 = st.columns(2)
+            if ec1.button("✅ Approve — save to file", type="primary", use_container_width=True):
+                resume({"approved": True})
+            if ec2.button("❌ Reject — don't save", use_container_width=True):
+                resume({"approved": False})
     else:
         if result.get("itinerary"):
             st.subheader("📋 Trip Briefing")
@@ -157,3 +180,6 @@ if st.session_state.trip_result:
         if result.get("calendar_result"):
             cr = result["calendar_result"]
             st.caption(f"Calendar: {cr.get('status')} — {cr.get('message', '')}")
+        if result.get("export_result"):
+            er = result["export_result"]
+            st.caption(f"Export: {er.get('status')}" + (f" — saved to `{er['path']}`" if er.get("path") else ""))

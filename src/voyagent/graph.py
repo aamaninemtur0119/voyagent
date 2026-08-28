@@ -1,9 +1,15 @@
 """The orchestrator: a LangGraph StateGraph coordinating three specialized agents (Eligibility,
 Logistics, Experience) with real state passed between them, tool-failure recovery (retry once,
-then continue without that piece and say so — never a hard stop), and a human-in-the-loop
-approval gate (via interrupt()) around the one real write action: writing deadlines to Google
-Calendar. Reads (all three agents) are autonomous; the write is not.
+then continue without that piece and say so — never a hard stop), two independently human-approved
+write actions (Google Calendar, and saving the itinerary to a file), and an adaptive replanning
+loop: rejecting the calendar approval WITH feedback loops back to re-run Logistics/Experience with
+updated dates/budget rather than just stopping, capped at MAX_REPLANS to guarantee termination.
+
+Reads (all three agents) are autonomous; both write actions are not — each sits behind its own
+interrupt(), independently approved.
 """
+
+from pathlib import Path
 
 from langchain_anthropic import ChatAnthropic
 from langgraph.checkpoint.memory import MemorySaver
@@ -17,6 +23,9 @@ from voyagent.state import TripState
 from voyagent.tools.calendar_actions import Deadline, extract_deadlines, write_to_calendar
 
 _llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
+
+MAX_REPLANS = 2
+EXPORTS_DIR = Path(__file__).resolve().parents[2] / "data" / "exports"
 
 
 def _with_retry(fn, *args, attempts: int = 2, **kwargs):
@@ -57,11 +66,11 @@ NEEDS_DEADLINE_CHECK = {
 }
 
 
-def route_after_eligibility(state: TripState) -> str:
+def route_after_eligibility(state: TripState):
     elig = state.get("eligibility")
     if elig and elig["answer_type"] in NEEDS_DEADLINE_CHECK and state.get("start_date"):
         return "deadlines"
-    return "logistics"
+    return ["logistics", "experience"]  # no deadline check needed — fan out straight to both
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +96,8 @@ def deadlines_node(state: TripState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Logistics Agent node
+# Logistics + Experience run in PARALLEL — they don't depend on each other, only on eligibility
+# having (maybe) run first. Both fan into synthesize, which LangGraph automatically waits on.
 # ---------------------------------------------------------------------------
 def logistics_node(state: TripState) -> dict:
     prefs = state.get("preferences") or {}
@@ -110,9 +120,6 @@ def logistics_node(state: TripState) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Experience Agent node
-# ---------------------------------------------------------------------------
 def experience_node(state: TripState) -> dict:
     prefs = state.get("preferences") or {}
     try:
@@ -162,18 +169,62 @@ def synthesize_node(state: TripState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Human-in-the-loop: the ONLY write action (calendar) requires explicit approval.
+# Human-in-the-loop #1: calendar write, OR reject-with-feedback to trigger a replan.
 # ---------------------------------------------------------------------------
+class ReplanUpdate(BaseModel):
+    start_date: str | None = Field(None, description="New ISO date (YYYY-MM-DD) if the feedback implies changing the start date, else null.")
+    end_date: str | None = Field(None, description="New ISO end date if implied, else null.")
+    budget_level: str | None = Field(None, description="New budget level (Any, $, $$, $$$, $$$$) if implied, else null.")
+    summary: str = Field(description="One short line describing what's changing and why, for the trace log.")
+
+
 def human_approval_node(state: TripState) -> dict:
     deadlines = state.get("deadlines") or []
-    if not deadlines:
-        return {"calendar_approved": False}
+    replans_so_far = state.get("replan_count", 0)
     decision = interrupt({
         "type": "calendar_write_approval",
-        "message": f"{len(deadlines)} deadline(s) identified. Write these to Google Calendar?",
+        "message": (
+            f"{len(deadlines)} deadline(s) identified. Approve writing these to Google Calendar, "
+            "or describe a change (dates, budget) and I'll replan instead."
+        ) if deadlines else "Review the itinerary. Approve to continue, or describe a change and I'll replan.",
         "deadlines": deadlines,
+        "itinerary": state.get("itinerary"),
+        "replans_so_far": replans_so_far,
+        "replans_remaining": max(0, MAX_REPLANS - replans_so_far),
     })
-    return {"calendar_approved": bool(decision.get("approved"))}
+    approved = bool(decision.get("approved"))
+    feedback = (decision.get("feedback") or "").strip()
+
+    if approved or not feedback or replans_so_far >= MAX_REPLANS:
+        return {"calendar_approved": approved, "replan_requested": False}
+
+    update = _llm.with_structured_output(ReplanUpdate).invoke(
+        f'The traveler rejected a trip plan draft and said: "{feedback}". Current start_date='
+        f"{state.get('start_date')}, end_date={state.get('end_date')}, budget_level="
+        f"{(state.get('preferences') or {}).get('budget_level')}. Extract exactly what should "
+        "change — only set a field if the feedback actually implies changing it; leave the rest null."
+    )
+    updates: dict = {
+        "calendar_approved": False,
+        "replan_requested": True,
+        "replan_count": replans_so_far + 1,
+        "agent_trace": [{"agent": "orchestrator", "status": "retrying", "detail": f"Replanning: {update.summary}"}],
+    }
+    if update.start_date:
+        updates["start_date"] = update.start_date
+    if update.end_date:
+        updates["end_date"] = update.end_date
+    if update.budget_level:
+        prefs = dict(state.get("preferences") or {})
+        prefs["budget_level"] = update.budget_level
+        updates["preferences"] = prefs
+    return updates
+
+
+def route_after_approval(state: TripState):
+    if state.get("replan_requested"):
+        return ["logistics", "experience"]  # real cycle: re-run the affected agents, not a restart
+    return "finalize"
 
 
 def finalize_node(state: TripState) -> dict:
@@ -190,6 +241,35 @@ def finalize_node(state: TripState) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Human-in-the-loop #2: a second, independent write action — saving the itinerary to a file.
+# Shows the approval pattern generalizes rather than being a one-off built around Calendar.
+# ---------------------------------------------------------------------------
+def export_approval_node(state: TripState) -> dict:
+    decision = interrupt({
+        "type": "export_approval",
+        "message": "Save a copy of this itinerary as a file?",
+        "preview": (state.get("itinerary") or "")[:300],
+    })
+    return {"export_approved": bool(decision.get("approved"))}
+
+
+def finalize_export_node(state: TripState) -> dict:
+    if not state.get("export_approved"):
+        return {
+            "export_result": {"status": "skipped"},
+            "agent_trace": [{"agent": "orchestrator", "status": "done", "detail": "Itinerary not saved to file"}],
+        }
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    safe_city = "".join(c if c.isalnum() else "_" for c in state.get("destination_city", "trip"))
+    path = EXPORTS_DIR / f"{safe_city}_itinerary.md"
+    path.write_text(state.get("itinerary") or "")
+    return {
+        "export_result": {"status": "written", "path": str(path)},
+        "agent_trace": [{"agent": "orchestrator", "status": "done", "detail": f"Itinerary saved to {path.name}"}],
+    }
+
+
 def build_graph():
     graph = StateGraph(TripState)
     graph.add_node("eligibility", eligibility_node)
@@ -199,14 +279,19 @@ def build_graph():
     graph.add_node("synthesize", synthesize_node)
     graph.add_node("human_approval", human_approval_node)
     graph.add_node("finalize", finalize_node)
+    graph.add_node("export_approval", export_approval_node)
+    graph.add_node("finalize_export", finalize_export_node)
 
     graph.add_edge(START, "eligibility")
-    graph.add_conditional_edges("eligibility", route_after_eligibility, {"deadlines": "deadlines", "logistics": "logistics"})
+    graph.add_conditional_edges("eligibility", route_after_eligibility)
     graph.add_edge("deadlines", "logistics")
-    graph.add_edge("logistics", "experience")
+    graph.add_edge("deadlines", "experience")
+    graph.add_edge("logistics", "synthesize")  # fan-in: synthesize waits for both branches
     graph.add_edge("experience", "synthesize")
     graph.add_edge("synthesize", "human_approval")
-    graph.add_edge("human_approval", "finalize")
-    graph.add_edge("finalize", END)
+    graph.add_conditional_edges("human_approval", route_after_approval)  # may cycle back
+    graph.add_edge("finalize", "export_approval")
+    graph.add_edge("export_approval", "finalize_export")
+    graph.add_edge("finalize_export", END)
 
     return graph.compile(checkpointer=MemorySaver())
