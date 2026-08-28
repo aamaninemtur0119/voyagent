@@ -55,9 +55,15 @@ def eligibility_node(state: TripState) -> dict:
             "agent_trace": [{"agent": "eligibility", "status": "failed", "detail": f"Gave up after retrying: {e}"}],
             "errors": [f"Eligibility Agent failed after retry: {e}"],
         }
+    recency = result.get("recency_check_status", "skipped")
+    detail = result["answer_type"]
+    if recency == "contradiction_found":
+        detail += " (⚠️ live recency check flagged a possible contradiction)"
+    elif recency == "ok":
+        detail += " (recency-checked against live sources, no contradiction)"
     return {
         "eligibility": result,
-        "agent_trace": [{"agent": "eligibility", "status": "done", "detail": result["answer_type"]}],
+        "agent_trace": [{"agent": "eligibility", "status": "done", "detail": detail}],
     }
 
 

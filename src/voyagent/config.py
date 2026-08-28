@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     pinecone_index_name: str
     google_places_api_key: str
     duffel_api_key: str = ""
+    you_api_key: str = ""
 
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1024

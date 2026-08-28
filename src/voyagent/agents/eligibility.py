@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from voyagent.config import settings
 from voyagent.retrieval.embeddings import embed_texts
 from voyagent.retrieval.vector_store import retrieve as vector_retrieve
+from voyagent.tools.you_search import search as you_search
 
 _llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
 
@@ -130,6 +131,47 @@ def generate_answer(situation: dict, user_question: str, retrieved_chunks: list[
     return answer
 
 
+class RecencyCheck(BaseModel):
+    contradiction_found: bool = Field(
+        description=(
+            "True ONLY if a search result from a clearly official source (a government domain, "
+            "an embassy/consulate site, an official immigration authority — NOT a travel blog, "
+            "aggregator, or unofficial 'the real answer' style site) explicitly and unambiguously "
+            "states something that contradicts the corpus-grounded answer. A vague signal, an "
+            "unofficial source disagreeing, or an ambiguous/older-looking result is NOT a "
+            "contradiction — default to False when in doubt. The corpus was itself sourced from "
+            "official government pages, so it should only be overridden by evidence at least as "
+            "credible."
+        )
+    )
+    contradicting_url: str = Field(default="", description="The specific URL that contradicts, if any.")
+    note: str = Field(default="", description="One sentence explaining the finding either way.")
+
+
+def _recency_check(answer: Answer, situation: dict) -> RecencyCheck:
+    """Best-effort cross-check against live search — closes part of the corpus's known freshness
+    gap (no automated re-fetch mechanism). Deliberately conservative: the corpus was built from
+    official sources, so only an equally official-looking live source can override it. Raises on
+    a genuine infrastructure failure (network, missing key) — the caller decides what to do."""
+    query = f"{situation['destination']} visa requirements {situation['nationality']} citizens recent changes"
+    results = you_search(query, max_results=5)
+    if not results:
+        return RecencyCheck(contradiction_found=False, note="No search results returned.")
+
+    listing = "\n\n".join(
+        f"[{r['url']}] {r['title']}\n" + " / ".join(r["snippets"][:3]) for r in results
+    )
+    prompt = (
+        "A visa-requirements answer was generated from a corpus of official government sources. "
+        "Check whether any of these LIVE web search results, from a source you'd judge at least "
+        "as official/credible as a government immigration page, clearly and explicitly "
+        "contradicts it. Be conservative — an unofficial or vague source does not count.\n\n"
+        f"Corpus-grounded answer: {answer.answer_text}\n\nRequirements stated: {answer.requirements}\n\n"
+        f"Live search results:\n{listing}"
+    )
+    return _llm.with_structured_output(RecencyCheck).invoke(prompt)
+
+
 def run(nationality: str, destination: str, purpose: str, duration: str) -> dict:
     """The Eligibility Agent's entry point — retrieve, gate, generate. Raises on a genuine
     infrastructure failure (embedding/Pinecone/LLM call error) rather than swallowing it, so the
@@ -148,6 +190,32 @@ def run(nationality: str, destination: str, purpose: str, duration: str) -> dict
         else generate_answer(situation, question, retrieved_chunks)
     )
 
+    # Recency check: best-effort, never blocks the core answer. Only worth running on an answer
+    # confident enough that a contradiction would actually matter — a refusal is already
+    # hedged. Retry once, then skip silently on failure (missing key, network error) rather than
+    # treating a supplementary safety net as a hard dependency.
+    recency_status = "skipped"
+    if answer.answer_type != "refuse_and_verify":
+        last_exc: Exception | None = None
+        for _ in range(2):
+            try:
+                check = _recency_check(answer, situation)
+                recency_status = "contradiction_found" if check.contradiction_found else "ok"
+                if check.contradiction_found:
+                    answer.answer_type = "refuse_and_verify"
+                    answer.answer_text = (
+                        f"{answer.answer_text}\n\n⚠️ A live source ({check.contradicting_url}) appears "
+                        f"to contradict this corpus-grounded answer: {check.note} Treating this as "
+                        "unconfirmed rather than asserting either version with confidence."
+                    )
+                    answer.citation = f"{answer.citation}; contradicted by {check.contradicting_url}"
+                last_exc = None
+                break
+            except Exception as e:  # noqa: BLE001 - best-effort safety net, never a hard dependency
+                last_exc = e
+        if last_exc is not None:
+            recency_status = "not_configured" if "YOU_API_KEY" in str(last_exc) else f"failed: {last_exc}"
+
     return {
         "situation": situation,
         "answer_type": answer.answer_type,
@@ -158,4 +226,5 @@ def run(nationality: str, destination: str, purpose: str, duration: str) -> dict
         "citation": answer.citation,
         "retrieved_chunk_ids": [c["id"] for c in retrieved_chunks],
         "retrieved_chunks": retrieved_chunks,
+        "recency_check_status": recency_status,
     }
