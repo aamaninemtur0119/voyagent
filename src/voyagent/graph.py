@@ -96,7 +96,7 @@ def logistics_node(state: TripState) -> dict:
             logistics.run,
             state["origin"], state["destination_city"], state["destination_country"],
             state.get("start_date"), state.get("end_date"),
-            prefs.get("budget_level", "Any"),
+            prefs.get("budget_level", "Any"), prefs,
         )
     except Exception as e:
         return {
