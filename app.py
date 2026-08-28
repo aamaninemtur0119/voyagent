@@ -20,6 +20,16 @@ PURPOSES = ["Tourism", "Business meeting", "Transit", "Study"]
 STATUS_ICON = {"done": "✅", "failed": "⚠️", "running": "⏳", "retrying": "🔁", "skipped": "⏭️"}
 
 
+def md_safe(text) -> str:
+    """Escape '$' before handing text to any Streamlit markdown-rendering call. Streamlit's
+    markdown renderer treats a pair of '$' as LaTeX math-mode, which silently mangles any text
+    containing two or more dollar signs — collapsing whitespace and italicizing everything
+    between them (found live: a flight recommendation mentioning a price came out as an
+    unreadable run-on). This is a travel app — prices/fees show up constantly in LLM-generated
+    text and API data — so this is applied broadly rather than patched per call site."""
+    return str(text).replace("$", "\\$")
+
+
 @st.cache_resource
 def get_graph():
     # One graph + one in-memory checkpointer for the life of the server process — each browser
@@ -32,23 +42,23 @@ def get_graph():
 def render_trace(trace: list[dict]) -> None:
     for entry in trace:
         icon = STATUS_ICON.get(entry["status"], "•")
-        st.markdown(f"{icon} **{entry['agent']}** — {entry['detail']}")
+        st.markdown(f"{icon} **{entry['agent']}** — {md_safe(entry['detail'])}")
 
 
 def _place_card(item: dict) -> None:
     with st.container(border=True):
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown(f"**{item['name']}**")
+            st.markdown(f"**{md_safe(item['name'])}**")
             badges = []
             if item.get("rating") is not None:
                 badges.append(f"⭐ {item['rating']} ({item.get('review_count', 0)} reviews)")
             if item.get("price_level"):
-                badges.append(f"💰 {item['price_level']}")
+                badges.append(f"💰 {md_safe(item['price_level'])}")
             if badges:
                 st.caption(" · ".join(badges))
             if item.get("why"):
-                st.caption(item["why"])
+                st.caption(md_safe(item["why"]))
         with col2:
             if item.get("maps_url"):
                 st.link_button("View / Book", item["maps_url"], use_container_width=True)
@@ -66,11 +76,11 @@ def render_result_cards(result: dict) -> None:
         if status == "ok" and logistics.get("flight_offers"):
             st.caption("⚠️ Sandbox data (Duffel test mode) — real request/response, not live market fares.")
             if logistics.get("flight_recommendation"):
-                st.info(f"**Recommended:** {logistics['flight_recommendation']}")
+                st.info(f"**Recommended:** {md_safe(logistics['flight_recommendation'])}")
             for o in logistics["flight_offers"]:
-                st.caption(
+                st.caption(md_safe(
                     f"{o['airline']} — {o['price_total']} {o['currency']} — {o['stops']} stop(s) — {o['duration']}"
-                )
+                ))
             st.caption("Compare more options:")
         else:
             reason = "real-time flight search isn't connected yet" if status == "not_configured" else f"flight search hit an issue ({status})"
@@ -188,7 +198,7 @@ if st.session_state.trip_result:
         if result.get("errors"):
             with st.expander(f"Errors encountered ({len(result['errors'])})"):
                 for e in result["errors"]:
-                    st.caption(f"⚠️ {e}")
+                    st.caption(md_safe(f"⚠️ {e}"))
 
     st.divider()
 
@@ -208,9 +218,9 @@ if st.session_state.trip_result:
             st.write(interrupt_payload["message"])
             if interrupt_payload.get("itinerary"):
                 with st.container(border=True):
-                    st.markdown(interrupt_payload["itinerary"])
+                    st.markdown(md_safe(interrupt_payload["itinerary"]))
             for d in interrupt_payload.get("deadlines", []):
-                st.markdown(f"- **{d['title']}** — {d['date']} _( {d['basis']} )_ — {d['reason']}")
+                st.markdown(f"- **{md_safe(d['title'])}** — {d['date']} _( {d['basis']} )_ — {md_safe(d['reason'])}")
             render_result_cards(result)
 
             feedback = ""
@@ -232,7 +242,7 @@ if st.session_state.trip_result:
         elif itype == "export_approval":
             st.subheader("🖐️ Human approval needed — Save Itinerary")
             st.write(interrupt_payload["message"])
-            st.caption(interrupt_payload.get("preview", "") + "...")
+            st.caption(md_safe(interrupt_payload.get("preview", "")) + "...")
 
             ec1, ec2 = st.columns(2)
             if ec1.button("✅ Approve — save to file", type="primary", use_container_width=True):
@@ -242,11 +252,11 @@ if st.session_state.trip_result:
     else:
         if result.get("itinerary"):
             st.subheader("📋 Trip Briefing")
-            st.markdown(result["itinerary"])
+            st.markdown(md_safe(result["itinerary"]))
         render_result_cards(result)
         if result.get("calendar_result"):
             cr = result["calendar_result"]
-            st.caption(f"Calendar: {cr.get('status')} — {cr.get('message', '')}")
+            st.caption(md_safe(f"Calendar: {cr.get('status')} — {cr.get('message', '')}"))
         if result.get("export_result"):
             er = result["export_result"]
-            st.caption(f"Export: {er.get('status')}" + (f" — saved to `{er['path']}`" if er.get("path") else ""))
+            st.caption(md_safe(f"Export: {er.get('status')}" + (f" — saved to `{er['path']}`" if er.get("path") else "")))
