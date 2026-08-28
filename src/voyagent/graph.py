@@ -145,10 +145,16 @@ class Itinerary(BaseModel):
             "A narrative trip briefing in markdown: visa/entry summary, the deadline timeline (if "
             "any), a one-line flight-search status note, and — if applicable — a multi-destination "
             "recommendation. Do NOT itemize every hotel/restaurant/place/activity/flight option "
-            "with its own link and price here; those are rendered separately as structured cards "
-            "from the raw data, which is more reliable than reproducing a URL in prose. If a "
-            "section is null/missing, say so explicitly (e.g. 'Accommodation info wasn't available "
-            "this time due to a tool error') rather than pretending it was never asked for."
+            "with its own link and price here — those appear directly below this briefing as their "
+            "own section in the app, so just don't mention them at all rather than describing "
+            "where they are. Never use internal/technical terms like 'logistics data', 'structured "
+            "cards', 'the state', or 'provided separately' — write only what a traveler would "
+            "actually want to read, in plain language. For flights specifically: state in one "
+            "plain sentence whether a live price was found or not (e.g. 'A flight search wasn't "
+            "available this time, but search links are below' or 'A recommended flight was found "
+            "below') — do not describe HOW or WHERE it's shown beyond that. If a section is null/"
+            "missing, say so in plain language (e.g. 'Accommodation info wasn't available this "
+            "time due to a tool error') rather than pretending it was never asked for."
         )
     )
 
