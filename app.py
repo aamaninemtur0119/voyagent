@@ -76,12 +76,20 @@ def render_result_cards(result: dict) -> None:
         if status == "ok" and logistics.get("flight_offers"):
             st.caption("⚠️ Sandbox data (Duffel test mode) — real request/response, not live market fares.")
             if logistics.get("flight_recommendation"):
-                st.info(f"**Recommended:** {md_safe(logistics['flight_recommendation'])}")
+                st.markdown(
+                    f'<div style="border-left: 4px solid #F5A623; background: rgba(245,166,35,0.12); '
+                    f'padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 0.5rem;">'
+                    f'<b>🏆 Recommended:</b> {md_safe(logistics["flight_recommendation"])}</div>',
+                    unsafe_allow_html=True,
+                )
             for o in logistics["flight_offers"]:
-                st.caption(md_safe(
+                oc1, oc2 = st.columns([4, 1])
+                oc1.caption(md_safe(
                     f"{o['airline']} — {o['price_total']} {o['currency']} — {o['stops']} stop(s) — {o['duration']}"
                 ))
-            st.caption("Compare more options:")
+                if o.get("search_link"):
+                    oc2.link_button("Search", o["search_link"], use_container_width=True)
+            st.caption("Not this exact sandbox flight (it isn't real) — searches for that airline/route on Google Flights. Or compare more broadly:")
         else:
             reason = "real-time flight search isn't connected yet" if status == "not_configured" else f"flight search hit an issue ({status})"
             st.caption(f"No live flight prices this time — {reason}. Search directly:")
@@ -135,9 +143,16 @@ with form_col:
         origin = st.text_input("Flying from (city or airport)", placeholder="e.g. New York")
     with c2:
         purpose = st.selectbox("Purpose", PURPOSES)
-        duration = st.text_input("Duration of stay", placeholder="e.g. 14 days")
         start_date = st.date_input("Start date", value=date.today() + timedelta(days=60))
         end_date = st.date_input("End date", value=date.today() + timedelta(days=74))
+        # Duration is derived from the dates, not asked separately — a free-text duration field
+        # alongside start/end dates let them silently contradict each other (e.g. "14 days"
+        # stated while the actual date range was 100+ days), feeding the wrong duration to the
+        # Eligibility Agent's visa reasoning while flights/hotels reflected the real range. Single
+        # source of truth instead: the dates are what's real, duration is just their difference.
+        trip_days = (end_date - start_date).days
+        duration = f"{trip_days} days" if trip_days > 0 else ""
+        st.caption(f"Duration: **{trip_days} days**" if trip_days > 0 else "⚠️ End date must be after start date.")
 
     st.caption("Preferences (optional — used by the Experience and Logistics agents)")
     p1, p2, p3 = st.columns(3)
@@ -157,7 +172,7 @@ with trace_col:
 
 if plan_clicked:
     if not (nationality and destination_city and origin and duration):
-        st.warning("Please fill in nationality, destination city, origin, and duration.")
+        st.warning("Please fill in nationality, destination city, and origin, and make sure the end date is after the start date.")
     else:
         st.session_state.thread_id = str(uuid.uuid4())  # fresh run each time the form is submitted
         config = {"configurable": {"thread_id": st.session_state.thread_id}}

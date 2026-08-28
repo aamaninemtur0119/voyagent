@@ -85,3 +85,16 @@ def build_flight_links(
         "Skyscanner": skyscanner_url,
         "Kayak": kayak_url,
     }
+
+
+def build_airline_search_link(
+    origin_code: str, destination_code: str, start_date: str, end_date: str, cabin_class: str, airline_name: str,
+) -> str:
+    """A per-offer search link nudging toward the airline a sandbox Duffel offer named. Not a
+    link to that exact flight — Duffel's sandbox prices/schedules aren't real bookable flights,
+    so there's nothing genuine to deep-link to the way a hotel's real Google Maps listing is.
+    Google Flights' natural-language query mode is the only one of the three aggregators where an
+    airline name can be included at all; Skyscanner/Kayak's URL schemes don't have an easy
+    per-airline parameter for a deep link like this."""
+    query = f"Flights from {origin_code} to {destination_code} on {start_date} returning {end_date}, {cabin_class.lower()} class on {airline_name}"
+    return f"https://www.google.com/travel/flights?q={quote(query)}"

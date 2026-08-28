@@ -24,7 +24,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field
 
 from voyagent.config import settings
-from voyagent.tools.flights import build_flight_links, resolve_airport_code
+from voyagent.tools.flights import build_airline_search_link, build_flight_links, resolve_airport_code
 from voyagent.tools.google_places import search_accommodation
 
 _llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
@@ -163,6 +163,10 @@ def run(
             origin_code = resolve_airport_code(origin)
             destination_code = resolve_airport_code(destination_city)
             flight_offers = search_flights_via_mcp(origin_code, destination_code, start_date, end_date, cabin_class)
+            for offer in flight_offers:
+                offer["search_link"] = build_airline_search_link(
+                    origin_code, destination_code, start_date, end_date, cabin_class, offer["airline"]
+                )
             flight_recommendation = _recommend_flight(flight_offers, cabin_class, budget_level)
             flight_search_status = "ok"
             last_exc = None
