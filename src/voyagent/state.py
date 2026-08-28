@@ -16,7 +16,10 @@ class TripState(TypedDict, total=False):
     # --- input, set once at graph start ---
     nationality: str
     destination_country: str
-    destination_city: str
+    destination_city: str  # primary city — drives the actual Logistics/Experience agent calls
+    destination_cities: list[str]  # all cities the traveler mentioned, including destination_city;
+    # length > 1 means they've already indicated a multi-city plan, which suppresses the
+    # "consider more than one city" recommendation nudge in synthesis
     origin: str
     purpose: str
     duration: str

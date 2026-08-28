@@ -142,19 +142,47 @@ def experience_node(state: TripState) -> dict:
 class Itinerary(BaseModel):
     briefing: str = Field(
         description=(
-            "A complete, well-organized trip briefing in markdown combining all available agent "
-            "results. If any section is missing/None, explicitly say that piece wasn't available "
-            "(a tool failed after retrying) rather than silently omitting it."
+            "A narrative trip briefing in markdown: visa/entry summary, the deadline timeline (if "
+            "any), a one-line flight-search status note, and — if applicable — a multi-destination "
+            "recommendation. Do NOT itemize every hotel/restaurant/place/activity/flight option "
+            "with its own link and price here; those are rendered separately as structured cards "
+            "from the raw data, which is more reliable than reproducing a URL in prose. If a "
+            "section is null/missing, say so explicitly (e.g. 'Accommodation info wasn't available "
+            "this time due to a tool error') rather than pretending it was never asked for."
         )
     )
 
 
+MULTI_CITY_MIN_DAYS = 10
+
+
+def _multi_city_note_instruction(state: TripState) -> str:
+    duration_text = state.get("duration", "")
+    single_city = len(state.get("destination_cities") or []) <= 1
+    purpose_is_tourism = (state.get("purpose") or "").strip().lower() == "tourism"
+    # Cheap heuristic, not a parsed date range - just enough to catch "14 days" / "18 days" etc.
+    long_trip = any(str(n) in duration_text for n in range(MULTI_CITY_MIN_DAYS, 60))
+    if single_city and purpose_is_tourism and long_trip:
+        return (
+            "\n\nThe traveler only listed one destination city for a tourism trip of "
+            f"'{duration_text}'. At the END of the briefing, under a '💡 Recommendation' heading, "
+            "suggest — clearly framed as a suggestion, not a fact — that they consider splitting "
+            "their time across more than one city within the destination country instead of "
+            "staying in just one place that whole time. You may name well-known specific cities "
+            "if you're confident they're genuinely popular multi-stop destinations for that "
+            "country; otherwise keep it general rather than guessing at a specific itinerary."
+        )
+    return ""
+
+
 def synthesize_node(state: TripState) -> dict:
     prompt = (
-        "Combine these trip-planning results into one clear, organized markdown briefing for the "
-        "traveler. Use ONLY what's actually present below — if a section is null/missing, say so "
-        "explicitly (e.g. 'Accommodation info wasn't available this time due to a tool error') "
-        "rather than pretending it was never asked for.\n\n"
+        "Combine these trip-planning results into a narrative markdown briefing for the traveler "
+        "(see the format instructions on the output field — do not itemize individual hotels/"
+        "restaurants/places/activities/flights here, those are shown separately). Use ONLY what's "
+        "actually present below — if a section is null/missing, say so explicitly rather than "
+        "pretending it was never asked for."
+        f"{_multi_city_note_instruction(state)}\n\n"
         f"Eligibility (visa/entry): {state.get('eligibility')}\n\n"
         f"Deadlines: {state.get('deadlines')}\n\n"
         f"Logistics (flights/accommodation): {state.get('logistics')}\n\n"

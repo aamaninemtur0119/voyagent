@@ -1,18 +1,90 @@
-"""Logistics Agent — flights (deep links) + accommodation (live Google Places), with a genuine
-judgment step: an LLM picks and justifies the best hotel options for this specific traveler,
-grounded only in the actual returned fields (rating, review count, price level, family-friendly) —
-never inventing an amenity or fact the data doesn't contain. Not just sorted by rating."""
+"""Logistics Agent — flights (real search via an MCP tool, Amadeus-backed) + accommodation (live
+Google Places), each with a genuine judgment step: an LLM picks and justifies the best option(s)
+for this specific traveler, grounded only in the actual returned fields — never inventing a price,
+amenity, or fact the data doesn't contain.
 
+Flights are the one tool in Voyagent exposed via the Model Context Protocol rather than a direct
+Python import (see mcp_servers/flights_server.py) — new capability, added specifically to
+demonstrate that pattern. A tool-level MCP failure surfaces as a text-content error block, not a
+raised Python exception (verified empirically, not assumed) — this module translates that into a
+real exception so it flows through the exact same retry/graceful-degradation path every other tool
+in this project uses, rather than needing its own special case. If flight search still isn't
+available after retrying, Logistics falls back to deep links only, clearly labeled as such — never
+silently drops the flights section.
+"""
+
+import asyncio
+import json
 from datetime import date
 
 from langchain_anthropic import ChatAnthropic
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field
 
 from voyagent.config import settings
-from voyagent.tools.flights import build_flight_links
+from voyagent.tools.flights import build_flight_links, resolve_airport_code
 from voyagent.tools.google_places import search_accommodation
 
 _llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
+
+_MCP_SERVERS = {
+    "flights": {
+        "command": "uv",
+        "args": ["run", "--directory", str(__import__("pathlib").Path(__file__).resolve().parents[3]),
+                 "python", "-m", "voyagent.mcp_servers.flights_server"],
+        "transport": "stdio",
+    }
+}
+
+
+async def _call_flight_mcp_tool(**kwargs) -> list[dict]:
+    client = MultiServerMCPClient(_MCP_SERVERS)
+    tools = await client.get_tools()
+    tool = next(t for t in tools if t.name == "search_flights")
+    result = await tool.ainvoke(kwargs)
+
+    # MCP surfaces a tool-level failure as a text-content error block, not a raised exception —
+    # translate it into a real one so the caller's normal exception handling applies.
+    text = result[0]["text"] if isinstance(result, list) and result else ""
+    if text.startswith("Error executing tool"):
+        raise RuntimeError(text)
+    return json.loads(text)
+
+
+def search_flights_via_mcp(
+    origin_code: str, destination_code: str, departure_date: str, return_date: str, cabin_class: str, max_results: int = 5,
+) -> list[dict]:
+    """Sync wrapper — the rest of the graph is sync, so the async MCP client call is run to
+    completion here rather than converting the whole graph to async execution for one tool."""
+    return asyncio.run(_call_flight_mcp_tool(
+        origin=origin_code, destination=destination_code, departure_date=departure_date,
+        return_date=return_date, cabin_class=cabin_class, max_results=max_results,
+    ))
+
+
+class FlightRecommendation(BaseModel):
+    summary: str = Field(
+        description=(
+            "One recommended option and why, grounded ONLY in the fields provided (price, "
+            "currency, airline, stops, duration) — weigh against the traveler's stated budget/"
+            "cabin preference. Never invent a price or airline not in the data."
+        )
+    )
+
+
+def _recommend_flight(offers: list[dict], cabin_class: str, budget_level: str) -> str | None:
+    if not offers:
+        return None
+    listing = "\n".join(
+        f"- {o['airline']} | {o['price_total']} {o['currency']} | {o['stops']} stop(s) | {o['duration']}"
+        for o in offers
+    )
+    prompt = (
+        f"Recommend the single best flight option for a traveler with cabin preference "
+        f"'{cabin_class}' and budget level '{budget_level}', from these real offers. Ground your "
+        f"summary ONLY in the fields shown.\n\nOffers:\n{listing}"
+    )
+    return _llm.with_structured_output(FlightRecommendation).invoke(prompt).summary
 
 
 class HotelPick(BaseModel):
@@ -74,6 +146,24 @@ def run(
         cabin_class, stops_preference,
     )
 
+    flight_offers: list[dict] = []
+    flight_recommendation: str | None = None
+    flight_search_status = "not_attempted"
+    last_exc: Exception | None = None
+    for _ in range(2):  # retry once before falling back to links-only, same policy as every other tool
+        try:
+            origin_code = resolve_airport_code(origin)
+            destination_code = resolve_airport_code(destination_city)
+            flight_offers = search_flights_via_mcp(origin_code, destination_code, start_date, end_date, cabin_class)
+            flight_recommendation = _recommend_flight(flight_offers, cabin_class, budget_level)
+            flight_search_status = "ok"
+            last_exc = None
+            break
+        except Exception as e:  # noqa: BLE001 - real flight search is best-effort; links are the guaranteed fallback
+            last_exc = e
+    if last_exc is not None:
+        flight_search_status = "not_configured" if "AMADEUS_API_KEY" in str(last_exc) else f"failed: {last_exc}"
+
     hotels = search_accommodation(destination_city, destination_country)
     if budget_level != "Any":
         levels = ["$", "$$", "$$$", "$$$$"]
@@ -84,4 +174,10 @@ def run(
     candidates = sorted(hotels, key=lambda h: (h["rating"] or 0), reverse=True)[:8]
     curated = _curate_hotels(candidates, budget_level, preferences or {})
 
-    return {"flight_links": flight_links, "accommodation": curated or candidates[:5]}
+    return {
+        "flight_offers": flight_offers,
+        "flight_recommendation": flight_recommendation,
+        "flight_search_status": flight_search_status,
+        "flight_links": flight_links,
+        "accommodation": curated or candidates[:5],
+    }

@@ -35,6 +35,62 @@ def render_trace(trace: list[dict]) -> None:
         st.markdown(f"{icon} **{entry['agent']}** — {entry['detail']}")
 
 
+def _place_card(item: dict) -> None:
+    with st.container(border=True):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"**{item['name']}**")
+            badges = []
+            if item.get("rating") is not None:
+                badges.append(f"⭐ {item['rating']} ({item.get('review_count', 0)} reviews)")
+            if item.get("price_level"):
+                badges.append(f"💰 {item['price_level']}")
+            if badges:
+                st.caption(" · ".join(badges))
+            if item.get("why"):
+                st.caption(item["why"])
+        with col2:
+            if item.get("maps_url"):
+                st.link_button("View / Book", item["maps_url"], use_container_width=True)
+
+
+def render_result_cards(result: dict) -> None:
+    """Structured cards rendered directly from state — not from the LLM's synthesized prose —
+    so a link or price can never be dropped/paraphrased away by the synthesis step."""
+    logistics = result.get("logistics") or {}
+    experience = result.get("experience") or {}
+
+    if logistics:
+        st.markdown("### ✈️ Flights")
+        status = logistics.get("flight_search_status", "not_attempted")
+        if status == "ok" and logistics.get("flight_offers"):
+            if logistics.get("flight_recommendation"):
+                st.info(f"**Recommended:** {logistics['flight_recommendation']}")
+            for o in logistics["flight_offers"]:
+                st.caption(
+                    f"{o['airline']} — {o['price_total']} {o['currency']} — {o['stops']} stop(s) — {o['duration']}"
+                )
+            st.caption("Compare more options:")
+        else:
+            reason = "real-time flight search isn't connected yet" if status == "not_configured" else f"flight search hit an issue ({status})"
+            st.caption(f"No live flight prices this time — {reason}. Search directly:")
+        link_cols = st.columns(len(logistics.get("flight_links", {})) or 1)
+        for col, (label, url) in zip(link_cols, logistics.get("flight_links", {}).items()):
+            col.link_button(label, url, use_container_width=True)
+
+        if logistics.get("accommodation"):
+            st.markdown("### 🏨 Accommodation")
+            for h in logistics["accommodation"]:
+                _place_card(h)
+
+    for label, key in [("🍽️ Restaurants", "restaurants"), ("📍 Places to Visit", "places_to_visit"), ("🎯 Activities", "activities")]:
+        items = experience.get(key)
+        if items:
+            st.markdown(f"### {label}")
+            for item in items:
+                _place_card(item)
+
+
 st.title("🧭 Voyagent")
 st.caption(
     "A multi-agent trip-planning orchestrator — Eligibility, Logistics, and Experience agents "
@@ -60,7 +116,11 @@ with form_col:
     with c1:
         nationality = st.text_input("Nationality", placeholder="e.g. China, India, Canada")
         destination_country = st.selectbox("Destination country", DESTINATIONS)
-        destination_city = st.text_input("Destination city", placeholder="e.g. Tokyo")
+        destination_city = st.text_input("Primary destination city", placeholder="e.g. Tokyo")
+        other_cities = st.text_input(
+            "Other cities also in your plan (optional, comma-separated)",
+            placeholder="e.g. Kyoto, Osaka — leave blank if it's a single-city trip",
+        )
         origin = st.text_input("Flying from (city or airport)", placeholder="e.g. New York")
     with c2:
         purpose = st.selectbox("Purpose", PURPOSES)
@@ -94,6 +154,7 @@ if plan_clicked:
             "nationality": nationality,
             "destination_country": destination_country,
             "destination_city": destination_city,
+            "destination_cities": [destination_city] + [c.strip() for c in other_cities.split(",") if c.strip()],
             "origin": origin,
             "purpose": purpose,
             "duration": duration,
@@ -149,6 +210,7 @@ if st.session_state.trip_result:
                     st.markdown(interrupt_payload["itinerary"])
             for d in interrupt_payload.get("deadlines", []):
                 st.markdown(f"- **{d['title']}** — {d['date']} _( {d['basis']} )_ — {d['reason']}")
+            render_result_cards(result)
 
             feedback = ""
             if interrupt_payload.get("replans_remaining", 0) > 0:
@@ -180,6 +242,7 @@ if st.session_state.trip_result:
         if result.get("itinerary"):
             st.subheader("📋 Trip Briefing")
             st.markdown(result["itinerary"])
+        render_result_cards(result)
         if result.get("calendar_result"):
             cr = result["calendar_result"]
             st.caption(f"Calendar: {cr.get('status')} — {cr.get('message', '')}")
