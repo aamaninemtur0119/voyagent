@@ -103,12 +103,16 @@ def render_result_cards(result: dict) -> None:
             for h in logistics["accommodation"]:
                 _place_card(h)
 
-    for label, key in [("🍽️ Restaurants", "restaurants"), ("📍 Places to Visit", "places_to_visit"), ("🎯 Activities", "activities")]:
-        items = experience.get(key)
-        if items:
-            st.markdown(f"### {label}")
-            for item in items:
-                _place_card(item)
+    # experience is keyed by city: {"Tokyo": {"restaurants": [...], ...}, "Kyoto": {...}} — every
+    # city the traveler listed gets real, searched data, not just the primary one.
+    for city, city_experience in experience.items():
+        multi_city = len(experience) > 1
+        for label, key in [("🍽️ Restaurants", "restaurants"), ("📍 Places to Visit", "places_to_visit"), ("🎯 Activities", "activities")]:
+            items = (city_experience or {}).get(key)
+            if items:
+                st.markdown(f"### {label}" + (f" — {city}" if multi_city else ""))
+                for item in items:
+                    _place_card(item)
 
 
 st.title("🧭 Voyagent")

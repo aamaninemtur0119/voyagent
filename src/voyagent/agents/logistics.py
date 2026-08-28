@@ -59,15 +59,28 @@ async def _call_flight_mcp_tool(**kwargs) -> list[dict]:
     return [json.loads(block["text"]) for block in result]
 
 
+MCP_CALL_TIMEOUT_SECONDS = 25
+
+
 def search_flights_via_mcp(
     origin_code: str, destination_code: str, departure_date: str, return_date: str, cabin_class: str, max_results: int = 5,
 ) -> list[dict]:
     """Sync wrapper — the rest of the graph is sync, so the async MCP client call is run to
-    completion here rather than converting the whole graph to async execution for one tool."""
-    return asyncio.run(_call_flight_mcp_tool(
-        origin=origin_code, destination=destination_code, departure_date=departure_date,
-        return_date=return_date, cabin_class=cabin_class, max_results=max_results,
-    ))
+    completion here rather than converting the whole graph to async execution for one tool.
+    Bounded with an explicit timeout: a spawned subprocess (the MCP server) can hang rather than
+    fail fast (observed live — a run that never returned, distinct from the clean, fast exceptions
+    every other failure mode produces), and an unbounded hang defeats the retry-then-continue
+    policy the rest of this project relies on — retrying twice is pointless if each attempt can
+    block forever."""
+    async def _run_with_timeout():
+        return await asyncio.wait_for(
+            _call_flight_mcp_tool(
+                origin=origin_code, destination=destination_code, departure_date=departure_date,
+                return_date=return_date, cabin_class=cabin_class, max_results=max_results,
+            ),
+            timeout=MCP_CALL_TIMEOUT_SECONDS,
+        )
+    return asyncio.run(_run_with_timeout())
 
 
 class FlightRecommendation(BaseModel):

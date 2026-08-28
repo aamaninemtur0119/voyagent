@@ -128,8 +128,9 @@ def logistics_node(state: TripState) -> dict:
 
 def experience_node(state: TripState) -> dict:
     prefs = state.get("preferences") or {}
+    cities = state.get("destination_cities") or [state["destination_city"]]
     try:
-        result = _with_retry(experience.run, state["destination_city"], state["destination_country"], prefs)
+        result = _with_retry(experience.run, cities, state["destination_country"], prefs)
     except Exception as e:
         return {
             "experience": None,
@@ -138,7 +139,7 @@ def experience_node(state: TripState) -> dict:
         }
     return {
         "experience": result,
-        "agent_trace": [{"agent": "experience", "status": "done", "detail": "Restaurants/places/activities curated"}],
+        "agent_trace": [{"agent": "experience", "status": "done", "detail": f"Restaurants/places/activities curated for {', '.join(cities)}"}],
     }
 
 
@@ -146,28 +147,34 @@ def experience_node(state: TripState) -> dict:
 # Synthesis — combine whatever succeeded into one briefing, naming what didn't
 # ---------------------------------------------------------------------------
 class Itinerary(BaseModel):
-    briefing: str = Field(
+    main_summary: str = Field(
         description=(
-            "A narrative trip briefing in markdown: visa/entry summary, the deadline timeline (if "
-            "any), a one-line flight-search status note, and — if applicable — a multi-destination "
-            "recommendation. Do NOT itemize every individual hotel/restaurant/place/activity/"
-            "flight option with its own link and price here — those appear directly below this "
-            "briefing as their own section in the app. Instead, for hotels/restaurants/places/"
-            "activities, say in ONE plain sentence that they're shown below (e.g. 'Hotel, "
-            "restaurant, and activity options for Tokyo are below.') — never say they're 'not "
-            "rendered', 'not available', or otherwise missing when they actually do exist below; "
-            "say where they are, don't imply they're absent. Never use internal/technical terms "
-            "like 'logistics data', 'structured cards', 'the state', or 'provided separately' — "
-            "write only what a traveler would actually want to read, in plain language. For "
-            "flights specifically: state in one plain sentence whether a price was found or not "
-            "(and if so, that it's sandbox/test data, not a live market fare), and that flight "
-            "options are shown below too, same as the hotels/restaurants/places/activities (e.g. "
-            "'A flight search wasn't available this time, but search links are below, same as "
-            "the hotel and activity options.' or 'A sample flight option was found below (test "
-            "data, not a live fare), alongside the hotel and activity options.'). If a section is "
-            "genuinely null/missing (a tool actually failed), say so in plain language (e.g. "
-            "'Accommodation info wasn't available this time due to a tool error') rather than "
-            "pretending it was never asked for — but don't confuse 'missing' with 'shown below'."
+            "ONLY the visa/entry summary and the deadline timeline (if any). Close with ONE "
+            "plain-language sentence noting that flight, hotel, restaurant, place, and activity "
+            "options are shown below — do not itemize, describe, or summarize the content of any "
+            "of those here (no 'restaurants emphasize vegetarian spots'-style recaps); that's what "
+            "structured cards below this text are for, and what the recommendation field covers. "
+            "Never say something is 'not rendered' or 'not available' if it actually exists below "
+            "— say where it is. Never use internal/technical terms like 'logistics data', "
+            "'structured cards', or 'the state'. If eligibility or deadlines themselves are "
+            "genuinely null/missing (a tool failed), say so in plain language."
+        )
+    )
+    recommendation: str = Field(
+        description=(
+            "Under a '💡 Recommendation' heading, plain language: (1) If the traveler listed only "
+            "one destination city for a long tourism trip, suggest — clearly framed as a "
+            "suggestion, not a fact — splitting time across more cities in the destination "
+            "country; name specific well-known cities if you're confident they're genuinely "
+            "popular pairings. (2) One or two genuinely distinctive notes about the SPECIFIC real "
+            "places actually curated below (pick something notable from the actual restaurant/"
+            "place/activity names given — not generic travel-guide filler). (3) A short suggested "
+            "itinerary that names specific real restaurants/places/activities from what's curated "
+            "below, organized by city (and loosely by day, if it fits naturally) for every city "
+            "the traveler actually listed. If the traveler listed only one city, you may extend "
+            "the itinerary with 1-2 more cities in the destination country using your own general "
+            "knowledge — but clearly label that portion as a general suggestion, not verified "
+            "data, since those cities weren't actually searched."
         )
     )
 
@@ -196,21 +203,22 @@ def _multi_city_note_instruction(state: TripState) -> str:
 
 def synthesize_node(state: TripState) -> dict:
     prompt = (
-        "Combine these trip-planning results into a narrative markdown briefing for the traveler "
-        "(see the format instructions on the output field — do not itemize individual hotels/"
-        "restaurants/places/activities/flights here, those are shown separately). Use ONLY what's "
-        "actually present below — if a section is null/missing, say so explicitly rather than "
-        "pretending it was never asked for."
+        "Build the two-part trip output described in the schema below from these results. Ground "
+        "the recommendation's itinerary in the ACTUAL restaurant/place/activity names in the "
+        "Experience data — never invent a name for a city that was actually searched."
         f"{_multi_city_note_instruction(state)}\n\n"
+        f"Destination country: {state.get('destination_country')}\n\n"
+        f"Destination cities the traveler listed: {state.get('destination_cities')}\n\n"
         f"Eligibility (visa/entry): {state.get('eligibility')}\n\n"
         f"Deadlines: {state.get('deadlines')}\n\n"
-        f"Logistics (flights/accommodation): {state.get('logistics')}\n\n"
-        f"Experience (restaurants/places/activities): {state.get('experience')}\n\n"
+        f"Logistics (flights/accommodation) status: {state.get('logistics')}\n\n"
+        f"Experience (restaurants/places/activities), keyed by city: {state.get('experience')}\n\n"
         f"Any errors encountered: {state.get('errors')}"
     )
     result = _llm.with_structured_output(Itinerary).invoke(prompt)
+    combined = f"{result.main_summary.strip()}\n\n---\n\n{result.recommendation.strip()}"
     return {
-        "itinerary": result.briefing,
+        "itinerary": combined,
         "agent_trace": [{"agent": "orchestrator", "status": "done", "detail": "Itinerary synthesized"}],
     }
 

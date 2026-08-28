@@ -54,8 +54,7 @@ def _curate(category: str, candidates: list[dict], preferences: dict) -> list[di
     return picked
 
 
-def run(city: str, country: str, preferences: dict | None = None) -> dict:
-    preferences = preferences or {}
+def _run_one_city(city: str, country: str, preferences: dict) -> dict:
     pref_phrases = []
     if preferences.get("dietary") in ("Vegetarian", "Vegan"):
         pref_phrases.append(f"{preferences['dietary'].lower()} friendly")
@@ -74,3 +73,13 @@ def run(city: str, country: str, preferences: dict | None = None) -> dict:
         "places_to_visit": _curate("places to visit", places, preferences) or places[:5],
         "activities": _curate("activities", activities, preferences) or activities[:5],
     }
+
+
+def run(cities: list[str] | str, country: str, preferences: dict | None = None) -> dict:
+    """Searches EVERY city the traveler listed, not just the primary one — a city they explicitly
+    named deserves real, curated data, not a general-knowledge stand-in. Returns
+    {city_name: {restaurants, places_to_visit, activities}}. A single string is still accepted for
+    backward compatibility and returns a one-city dict."""
+    preferences = preferences or {}
+    city_list = [cities] if isinstance(cities, str) else cities
+    return {city: _run_one_city(city, country, preferences) for city in city_list}
