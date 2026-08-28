@@ -208,7 +208,11 @@ if st.session_state.trip_result:
 
         def resume(decision: dict) -> None:
             with st.spinner("Resuming..."):
-                final = graph.invoke(Command(resume=decision), config=config)
+                try:
+                    final = graph.invoke(Command(resume=decision), config=config)
+                except Exception as e:  # noqa: BLE001 - surface visibly rather than silently doing nothing
+                    st.error(f"Resuming the graph failed: {e}")
+                    return
             st.session_state.trip_result = final
             st.session_state.awaiting_approval = bool(final.get("__interrupt__"))
             st.rerun()
@@ -223,21 +227,29 @@ if st.session_state.trip_result:
                 st.markdown(f"- **{md_safe(d['title'])}** — {d['date']} _( {d['basis']} )_ — {md_safe(d['reason'])}")
             render_result_cards(result)
 
+            feedback_key = f"feedback_{interrupt_payload.get('replans_so_far', 0)}"
             feedback = ""
             if interrupt_payload.get("replans_remaining", 0) > 0:
                 feedback = st.text_input(
                     "Or describe a change instead (e.g. 'push the trip back a month', 'cheapest hotels only') "
                     f"— {interrupt_payload['replans_remaining']} replan(s) left",
-                    key=f"feedback_{interrupt_payload.get('replans_so_far', 0)}",
+                    key=feedback_key,
                 )
+                if feedback.strip():
+                    st.caption("Rejecting will replan using this feedback instead of just cancelling.")
             else:
                 st.caption("Replan limit reached — approve or reject only.")
 
+            # Stable labels + explicit keys on purpose: a button's identity defaults to its label
+            # text, so a label that changes based on other widget state (e.g. appending "— replan"
+            # only once feedback is non-empty) can make Streamlit lose track of a click between
+            # the render that showed it and the one processing it. Found live: a real click that
+            # silently did nothing.
             ac1, ac2 = st.columns(2)
-            if ac1.button("✅ Approve — write to Google Calendar", type="primary", use_container_width=True):
+            if ac1.button("✅ Approve — write to Google Calendar", type="primary", use_container_width=True, key="approve_btn"):
                 resume({"approved": True})
-            if ac2.button("❌ Reject" + (" — replan" if feedback.strip() else ""), use_container_width=True):
-                resume({"approved": False, "feedback": feedback})
+            if ac2.button("❌ Reject", use_container_width=True, key="reject_btn"):
+                resume({"approved": False, "feedback": st.session_state.get(feedback_key, "")})
 
         elif itype == "export_approval":
             st.subheader("🖐️ Human approval needed — Save Itinerary")
