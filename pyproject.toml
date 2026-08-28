@@ -1,0 +1,27 @@
+[project]
+name = "voyagent"
+version = "0.1.0"
+description = "Voyagent — multi-agent trip-planning orchestrator (LangGraph): eligibility, logistics, and experience agents coordinated by an orchestrator, with real state, tool-failure recovery, and human-in-the-loop approval before any write action."
+authors = [
+    { name = "Aamani Nemtur", email = "aamani.nemtur0119@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "google-api-python-client>=2.199.0",
+    "google-auth-oauthlib>=1.4.0",
+    "langchain-anthropic>=1.6.1",
+    "langchain-core>=1.6.0",
+    "langchain-openai>=1.6.0",
+    "langchain-text-splitters>=1.1.2",
+    "langgraph>=0.6.0",
+    "pinecone>=9.1.0",
+    "pydantic-settings>=2.15.0",
+    "python-dotenv>=1.2.3",
+    "rank-bm25>=0.2.2",
+    "requests>=2.34.2",
+    "streamlit>=1.62.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"

@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+data/user_preferences/
+google_calendar_credentials.json
+google_calendar_token.json
