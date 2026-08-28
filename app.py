@@ -144,6 +144,9 @@ if st.session_state.trip_result:
         if itype == "calendar_write_approval":
             st.subheader("🖐️ Human approval needed — Calendar")
             st.write(interrupt_payload["message"])
+            if interrupt_payload.get("itinerary"):
+                with st.container(border=True):
+                    st.markdown(interrupt_payload["itinerary"])
             for d in interrupt_payload.get("deadlines", []):
                 st.markdown(f"- **{d['title']}** — {d['date']} _( {d['basis']} )_ — {d['reason']}")
 
