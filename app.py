@@ -88,8 +88,8 @@ def render_result_cards(result: dict) -> None:
                     f"{o['airline']} — {o['price_total']} {o['currency']} — {o['stops']} stop(s) — {o['duration']}"
                 ))
                 if o.get("search_link"):
-                    oc2.link_button("Search", o["search_link"], use_container_width=True)
-            st.caption("Not this exact sandbox flight (it isn't real) — searches for that airline/route on Google Flights. Or compare more broadly:")
+                    oc2.link_button("Search route", o["search_link"], use_container_width=True)
+            st.caption("Sandbox flights aren't bookable — each 'Search route' link opens a real Google Flights search for this route/dates instead. More options:")
         else:
             reason = "real-time flight search isn't connected yet" if status == "not_configured" else f"flight search hit an issue ({status})"
             st.caption(f"No live flight prices this time — {reason}. Search directly:")

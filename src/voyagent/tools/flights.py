@@ -88,13 +88,16 @@ def build_flight_links(
 
 
 def build_airline_search_link(
-    origin_code: str, destination_code: str, start_date: str, end_date: str, cabin_class: str, airline_name: str,
+    origin_code: str, destination_code: str, start_date: str, end_date: str, cabin_class: str,
 ) -> str:
-    """A per-offer search link nudging toward the airline a sandbox Duffel offer named. Not a
-    link to that exact flight — Duffel's sandbox prices/schedules aren't real bookable flights,
-    so there's nothing genuine to deep-link to the way a hotel's real Google Maps listing is.
-    Google Flights' natural-language query mode is the only one of the three aggregators where an
-    airline name can be included at all; Skyscanner/Kayak's URL schemes don't have an easy
-    per-airline parameter for a deep link like this."""
-    query = f"Flights from {origin_code} to {destination_code} on {start_date} returning {end_date}, {cabin_class.lower()} class on {airline_name}"
+    """A per-offer search link for the route. NOT a link to that exact sandbox flight — Duffel's
+    test-mode prices/schedules aren't real bookable flights, so there's nothing genuine to
+    deep-link to the way a hotel's real Google Maps listing is. Originally tried appending the
+    airline name to the query text; dropped after live user testing showed it landed on Google
+    Flights' generic homepage instead of results — likely because "Duffel Airways" (the sandbox's
+    own placeholder carrier) isn't a real airline Google's parser can recognize, and airline-name
+    filtering was never actually verified to work for the real carriers either. Reusing the exact
+    query shape already confirmed working for the aggregate "compare more" links is more honest
+    than promising a per-airline filter this URL scheme has no documented support for."""
+    query = f"Flights from {origin_code} to {destination_code} on {start_date} returning {end_date}, {cabin_class.lower()} class"
     return f"https://www.google.com/travel/flights?q={quote(query)}"
