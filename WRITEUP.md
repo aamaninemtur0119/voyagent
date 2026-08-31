@@ -80,7 +80,7 @@ The net effect is that a run reaches the review gate with a usable plan under a 
 
 The visa answer is retrieval-grounded. The corpus is a set of curated Markdown files of visa and entry rules, sourced from official government pages and indexed in Pinecone. Retrieval is hybrid: dense embeddings for semantic match plus sparse BM25 for exact-term match, fused and then reranked.
 
-There are a few deliberate guards around the generation step. Before generating anything, a deterministic gate checks the top rerank score; if it's below a threshold, the agent refuses outright — "no source is a strong enough match to answer confidently" — without calling the model at all. A second check compares each retrieved document's topic against the traveler's actual purpose, so a student-visa page retrieved for a tourism question gets filtered out even though it shares the country and nationality. The traveler's nationality is normalized first, because the corpus is tagged by country name rather than demonym. When generation does run, it's told to use only the retrieved sources and to cite which ones it relied on. And immediately after generation, a grounding gate re-reads the answer against the chunks and strips or softens any claim they don't actually support — visa-waiver-program membership, fee amounts, law or proclamation names, where to apply — so the answer can't quietly import general knowledge that isn't in the sources.
+There are a few deliberate guards around the generation step. Before generating anything, a deterministic gate checks the top rerank score; if it's below a threshold, the agent refuses outright — "no source is a strong enough match to answer confidently" — without calling the model at all. A second check compares each retrieved document's topic against the traveler's actual purpose, so a student-visa page retrieved for a tourism question gets filtered out even though it shares the country and nationality. The traveler's nationality is normalized first, because the corpus is tagged by country name rather than demonym. When generation does run, it's told to use only the retrieved sources and to cite which ones it relied on.
 
 The corpus has no automatic refresh, so on top of all that the corpus answer is reconciled against live You.com results. The rule is: if a clearly official live source — a government domain, an immigration authority, an embassy — addresses the traveler's exact nationality, destination and purpose, it's treated as more current and it drives the answer. Otherwise the corpus answer stands and live results only fill gaps. Every run returns a list of sources tagged corpus or live, and when the two disagreed, a plain sentence saying which one the answer follows and why.
 
@@ -105,21 +105,11 @@ From the last completed run:
 - Retrieval hit-rate: 100% (23 of 23 rows with a known controlling document). Hybrid dense-plus-BM25 retrieval pulled the right source every time.
 - Answer-type accuracy: 71% (17 of 24 representable rows). This understates it. Several "misses" are the agent being more precise than the label: for Chinese-to-Australia, Chinese-to-USA-business and Canadian-to-Schengen-100-days the golden set says "visa required" and the agent says "a different visa category is required" — correctly, because those travelers can't use the ETA or the visa waiver and need a specific subclass. The Week 2 label schema is coarser than the answer.
 - Live-reconciliation effect: mostly unchanged, with one row fixed and one broken. For India-to-UK the cross-check fixed a stale corpus refusal into the correct "visa required." For India-to-Japan it broke a correct "visa required" into a wrong "visa waiver with ETA," over-weighting Japan's eVISA pages. One flip each way — the exact trade-off of the "prefer an official live source" rule.
-- Faithfulness was the weak spot. The judge's notes were consistent: the generated answers were stating precise facts the retrieved chunks don't contain — visa-waiver-program membership, specific fee amounts, the name and date of a 2026 entry proclamation, where to apply, validity windows. The model was filling gaps from general knowledge despite being told to use only its sources.
-
-### The faithfulness fix
-
-Three changes went into the Eligibility Agent in response:
-
-- An in-pipeline grounding gate. Right after generation, a dedicated pass re-reads the answer against the retrieved chunks and removes or softens to "not specified in the available sources" any claim a source doesn't actually support — waiver-program membership, fees, law and proclamation names and dates, where to apply, processing times, validity windows — while keeping the conclusion and everything that is supported. This is the eval's own faithfulness check run as a guardrail inside the pipeline, not just as a metric.
-- A tighter generation prompt, with an explicit list of fact types not to state unless a source contains them verbatim, and an instruction to keep the answer short.
-- The same grounding rule applied to the reconciliation step, so the final answer can only state facts from the corpus answer or the live snippets it actually cites.
-
-The accuracy harness was also corrected to judge the corpus answer against its own corpus-derived requirements rather than the reconciled ones. A clean re-measurement with these changes is still pending — the eval suite stalls under the API rate-limiting described above — but the fixes are in the code.
+- Faithfulness — keeping the answer strictly within its retrieved sources — is the axis with the most headroom; the generation step tends to fill gaps with general knowledge (visa-waiver-program membership, fee amounts, proclamation dates, where to apply) that the retrieved chunks don't actually state.
 
 ## Advantages
 
-It's grounded rather than hallucinated. The visa answer is retrieval-backed, with a hard evidence gate before generation, a grounding gate after it that strips any claim the sources don't support, and a live cross-check on top. The flights, hotels and restaurants are rendered from the tool output directly — real prices, ratings and booking links — rather than being paraphrased by the model into prose, which in testing dropped and mangled links.
+It's grounded rather than hallucinated. The visa answer is retrieval-backed, with a hard evidence gate before generation and a live cross-check on top. The flights, hotels and restaurants are rendered from the tool output directly — real prices, ratings and booking links — rather than being paraphrased by the model into prose, which in testing dropped and mangled links.
 
 It's resilient by construction. A single failed tool or a single bad model response degrades to something usable instead of failing the whole run, and the output says what's missing.
 
@@ -140,8 +130,6 @@ The MCP flight subprocess could hang instead of failing fast — a run that just
 The synthesis step was itself a hard-stop for a while. Its output schema had a required recommendation field, and on a tool failure the model sometimes left it out, which failed validation and crashed the graph — the one node whose job is to gracefully report what failed was itself fragile. Made the field optional and wrapped synthesis in the same degrade-don't-crash pattern as everything else.
 
 Incoherent input produced Frankenstein plans — destination country Japan with city Toronto gave a Japan visa check alongside flights to Toronto. That's why there's now a validation gate as the very first node.
-
-Faithfulness was the weak spot in the accuracy eval. The cause was the generation step importing real-world knowledge it wasn't given: visa-waiver-program membership, fee amounts, a 2026 entry proclamation, where to apply. The fix was to add an in-pipeline grounding gate that strips any claim the retrieved sources don't support, tighten the generation prompt with an explicit do-not-state list, and apply the same rule to the reconciliation step. A clean re-measurement is still pending — see the note on rate limits below.
 
 Once real email credentials were configured, the eval suite started actually sending mail to its fake test address on every run, which bounced into a real inbox. The eval now stubs the email sender for the whole suite.
 

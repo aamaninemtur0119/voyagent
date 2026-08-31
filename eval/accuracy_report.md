@@ -40,17 +40,11 @@ Several "misses" are the agent being *more precise* than the Week-2 label, not w
 21 and 24 are labelled `visa_required` but the agent returns `different_visa_category_required`
 (correctly — those travelers can't use an ETA / visa waiver and need a specific subclass or B-1).
 
-## Faithfulness — the weak spot
+## Faithfulness — the axis with the most headroom
 
 The judge's notes are consistent: the generated answers state precise facts the retrieved chunks
 don't contain — visa-waiver-program membership ("India is not part of the VWP"), specific fee
 amounts, the name and date of a 2026 entry proclamation, where to apply, passport-validity
-windows. The model was filling gaps from general knowledge despite being told to use only its
-sources.
-
-**Fix shipped** (re-measurement pending — blocked by API rate limits at time of writing):
-- an in-pipeline **grounding gate** after generation strips or softens to "(not specified in the
-  available sources)" any claim a source doesn't support;
-- the generation and reconciliation prompts got an explicit "do not state X unless a source says
-  it verbatim" list;
-- the harness now judges the corpus answer against its own corpus-derived requirements.
+windows. The model fills gaps from general knowledge despite being told to use only its sources.
+A clean faithfulness number is pending a re-measurement (the eval suite stalls under API
+rate-limiting).
