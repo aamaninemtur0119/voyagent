@@ -3,13 +3,10 @@ genuine judgment step per category: an LLM picks and justifies the best options 
 traveler's stated preferences, grounded only in the actual returned fields — never inventing a dish,
 view, or amenity the data doesn't contain."""
 
-from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field
 
-from voyagent.config import settings
+from voyagent.llm import structured
 from voyagent.tools.google_places import search_activities, search_places_to_visit, search_restaurants
-
-_llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
 
 
 class Pick(BaseModel):
@@ -43,7 +40,11 @@ def _curate(category: str, candidates: list[dict], preferences: dict) -> list[di
         "anything not listed.\n\n"
         f"Candidates:\n{listing}"
     )
-    curation = _llm.with_structured_output(Curation).invoke(prompt)
+    # default=None so a malformed LLM response degrades to "no curation" — the caller falls back to
+    # the top few raw results — rather than throwing and nulling this city's whole Experience block.
+    curation = structured(Curation, prompt, default=None)
+    if curation is None:
+        return []
 
     by_name = {r["name"]: r for r in candidates}
     picked = []

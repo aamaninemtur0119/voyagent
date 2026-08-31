@@ -10,20 +10,24 @@ a static lookup table can't cover every city/airport name a user might type.
 URL formats confirmed via web search on 2026-08-23. Skyscanner and Kayak have documented,
 reasonably stable route+date URL patterns. Google Flights' precise parameter encoding (a binary
 `tfs` field) isn't publicly documented, so its officially-supported natural-language query mode is
-used instead of guessing that encoding. Stops/layover preference isn't reliably encodable as a URL
+used for the generic route link. Stops/layover preference isn't reliably encodable as a URL
 parameter for any of these three sites, so it's surfaced as guidance to apply on the results page
 rather than promised as a pre-applied filter that might silently not work.
+
+The per-offer airline link (build_airline_search_link) uses Kayak instead of Google Flights:
+Kayak's `?fs=airlines=<IATA>` filter reliably lands on a results page pre-filtered to that one
+carrier, whereas Google Flights' `?q=... on <Airline>` natural-language query proved unreliable —
+it frequently resolved to a plain Google web search or the Flights homepage rather than a filtered
+search (observed live for real carriers: American, Iberia, Qatar), not just for Duffel's own
+sandbox placeholder.
 """
 
 from datetime import date
 from urllib.parse import quote
 
-from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field
 
-from voyagent.config import settings
-
-_llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
+from voyagent.llm import structured
 
 SKYSCANNER_CABIN = {
     "Economy": "economy",
@@ -38,17 +42,38 @@ class ResolvedAirport(BaseModel):
         description="The 3-letter IATA airport code. If the input names a city with multiple airports, "
         "pick that city's primary/largest international airport."
     )
+    airport_note: str = Field(
+        default="",
+        description=(
+            "If the input city has NO commercial airport of its own, one short plain sentence naming "
+            "the airport city and that it's the usual gateway, e.g. 'Kyoto has no airport of its own "
+            "— flights route via Kansai International (KIX) near Osaka, ~75 min away by train.' Empty "
+            "string if the city has its own airport."
+        ),
+    )
+
+
+def resolve_airport(text: str) -> ResolvedAirport:
+    text = text.strip()
+    if len(text) == 3 and text.isalpha():
+        return ResolvedAirport(iata_code=text.upper())  # already a code — skip the LLM call
+    result = structured(
+        ResolvedAirport,
+        f"What is the 3-letter IATA airport code for this airport, city, or place: '{text}'? "
+        "If it names a city with multiple airports, pick the primary international one. If the city "
+        "has no airport of its own, pick the standard gateway airport and fill in airport_note.",
+        default=None,
+    )
+    if result:
+        result.iata_code = result.iata_code.upper()
+        return result
+    # Best-effort fallback: a crude 3-letter stub still lets the deep-link builders produce a
+    # usable (if imperfect) search URL, rather than the whole flight step throwing.
+    return ResolvedAirport(iata_code="".join(c for c in text.upper() if c.isalpha())[:3])
 
 
 def resolve_airport_code(text: str) -> str:
-    text = text.strip()
-    if len(text) == 3 and text.isalpha():
-        return text.upper()  # already looks like a code — skip the LLM call
-    result = _llm.with_structured_output(ResolvedAirport).invoke(
-        f"What is the 3-letter IATA airport code for this airport, city, or place: '{text}'? "
-        "If it names a city with multiple airports, pick the primary international one."
-    )
-    return result.iata_code.upper()
+    return resolve_airport(text).iata_code
 
 
 def build_flight_links(
@@ -87,24 +112,36 @@ def build_flight_links(
     }
 
 
-SANDBOX_ONLY_CARRIERS = {"Duffel Airways"}  # Duffel's own placeholder — not a real airline, no
-# real search engine can filter to it, unlike every actual carrier the sandbox also returns
-# (American Airlines, British Airways, Iberia, Qatar Airways, etc.)
+# Duffel's own sandbox placeholder carrier — IATA "ZZ", name "Duffel Airways". Not a real airline,
+# so no aggregator can filter to it; a per-offer link for this one falls back to an unfiltered
+# route search rather than a broken airline filter.
+SANDBOX_ONLY_IATA = {"ZZ"}
+SANDBOX_ONLY_CARRIERS = {"Duffel Airways"}
 
 
 def build_airline_search_link(
-    origin_code: str, destination_code: str, start_date: str, end_date: str, cabin_class: str, airline_name: str = "",
+    origin_code: str,
+    destination_code: str,
+    start_date: str,
+    end_date: str,
+    cabin_class: str,
+    airline_iata: str = "",
+    airline_name: str = "",
 ) -> str:
     """A per-offer search link. NOT a link to that exact sandbox flight/price — Duffel's test-mode
     schedules aren't real bookable flights, so there's nothing genuine to deep-link to the way a
-    hotel's real Google Maps listing is. Includes the airline name in Google Flights' natural-
-    language query for real carriers, since that's a well-established, human-used query shape
-    ("flights to Tokyo on British Airways") — but only for real carriers: Duffel's own sandbox
-    placeholder ("Duffel Airways") isn't a real airline any search engine can recognize, and an
-    earlier version that always included the airline name landed on Google Flights' generic
-    homepage for exactly that entry, so it's excluded specifically rather than dropping the
-    airline filter for every carrier because one of them isn't real."""
-    query = f"Flights from {origin_code} to {destination_code} on {start_date} returning {end_date}, {cabin_class.lower()} class"
-    if airline_name and airline_name not in SANDBOX_ONLY_CARRIERS:
-        query += f" on {airline_name}"
-    return f"https://www.google.com/travel/flights?q={quote(query)}"
+    hotel's real Google Maps listing is. Instead this opens a Kayak search for the same route/dates
+    pre-filtered to that one airline via Kayak's `fs=airlines=<IATA>` filter, which reliably lands
+    on a real filtered results page. (Google Flights' `?q=... on <Airline>` natural-language query
+    was used before but proved unreliable — it often resolved to a plain Google web search or the
+    Flights homepage instead of a filtered search.)
+
+    For a carrier with no usable IATA code — Duffel's own "ZZ" sandbox placeholder, or a missing
+    code — the airline filter is dropped and the link is a plain route search, since there is no
+    real airline to filter to."""
+    route = f"{origin_code}-{destination_code}/{start_date}/{end_date}"
+    params = "sort=price_a"
+    code = (airline_iata or "").strip().upper()
+    if code and code not in SANDBOX_ONLY_IATA and airline_name not in SANDBOX_ONLY_CARRIERS:
+        params += f"&fs=airlines={code}"
+    return f"https://www.kayak.com/flights/{route}?{params}"

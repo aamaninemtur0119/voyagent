@@ -71,10 +71,12 @@ def search_flights(
     results = []
     for offer in sorted(offers, key=lambda o: float(o["total_amount"]))[:max_results]:
         outbound = offer["slices"][0]
+        owner = offer.get("owner", {})
         results.append({
             "price_total": offer["total_amount"],
             "currency": offer["total_currency"],
-            "airline": offer.get("owner", {}).get("name", "Unknown"),
+            "airline": owner.get("name", "Unknown"),
+            "airline_iata": owner.get("iata_code"),  # used to build a real airline-filtered search link
             "stops": len(outbound["segments"]) - 1,
             "duration": outbound.get("duration"),
             "departure": outbound["segments"][0]["departing_at"],

@@ -19,15 +19,12 @@ import asyncio
 import json
 from datetime import date
 
-from langchain_anthropic import ChatAnthropic
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field
 
-from voyagent.config import settings
-from voyagent.tools.flights import build_airline_search_link, build_flight_links, resolve_airport_code
+from voyagent.llm import structured
+from voyagent.tools.flights import build_airline_search_link, build_flight_links, resolve_airport
 from voyagent.tools.google_places import search_accommodation
-
-_llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
 
 _MCP_SERVERS = {
     "flights": {
@@ -105,7 +102,8 @@ def _recommend_flight(offers: list[dict], cabin_class: str, budget_level: str) -
         f"'{cabin_class}' and budget level '{budget_level}', from these real offers. Ground your "
         f"summary ONLY in the fields shown.\n\nOffers:\n{listing}"
     )
-    return _llm.with_structured_output(FlightRecommendation).invoke(prompt).summary
+    rec = structured(FlightRecommendation, prompt, default=None)
+    return rec.summary if rec else None  # no recommendation blurb is fine — the offers still render
 
 
 class HotelPick(BaseModel):
@@ -140,7 +138,12 @@ def _curate_hotels(candidates: list[dict], budget_level: str, preferences: dict)
         "ONLY the fields shown — do not invent amenities, views, or anything not listed.\n\n"
         f"Candidates:\n{listing}"
     )
-    curation = _llm.with_structured_output(LogisticsCuration).invoke(prompt)
+    # default=None so a malformed LLM response degrades to "no curation" (the caller falls back to
+    # the rating-sorted candidates) instead of throwing and taking the whole Logistics Agent —
+    # flight search included — down with it.
+    curation = structured(LogisticsCuration, prompt, default=None)
+    if curation is None:
+        return []
 
     by_name = {h["name"]: h for h in candidates}
     picked = []
@@ -153,7 +156,7 @@ def _curate_hotels(candidates: list[dict], budget_level: str, preferences: dict)
 
 def run(
     origin: str,
-    destination_city: str,
+    cities: list[str],
     destination_country: str,
     start_date: str,
     end_date: str,
@@ -162,10 +165,16 @@ def run(
     cabin_class: str = "Economy",
     stops_preference: str = "Any",
 ) -> dict:
+    """`cities` is every destination city the traveler listed. Flights are priced to the first
+    (primary) city; accommodation is searched and curated for EVERY city, returned keyed by city."""
+    primary_city = cities[0]
     flight_links = build_flight_links(
-        origin, destination_city, date.fromisoformat(start_date), date.fromisoformat(end_date),
+        origin, primary_city, date.fromisoformat(start_date), date.fromisoformat(end_date),
         cabin_class, stops_preference,
     )
+    origin_airport = resolve_airport(origin)
+    destination_airport = resolve_airport(primary_city)
+    origin_code, destination_code = origin_airport.iata_code, destination_airport.iata_code
 
     flight_offers: list[dict] = []
     flight_recommendation: str | None = None
@@ -173,12 +182,12 @@ def run(
     last_exc: Exception | None = None
     for _ in range(2):  # retry once before falling back to links-only, same policy as every other tool
         try:
-            origin_code = resolve_airport_code(origin)
-            destination_code = resolve_airport_code(destination_city)
             flight_offers = search_flights_via_mcp(origin_code, destination_code, start_date, end_date, cabin_class)
             for offer in flight_offers:
                 offer["search_link"] = build_airline_search_link(
-                    origin_code, destination_code, start_date, end_date, cabin_class, offer["airline"]
+                    origin_code, destination_code, start_date, end_date, cabin_class,
+                    airline_iata=offer.get("airline_iata") or "",
+                    airline_name=offer["airline"],
                 )
             flight_recommendation = _recommend_flight(flight_offers, cabin_class, budget_level)
             flight_search_status = "ok"
@@ -189,20 +198,24 @@ def run(
     if last_exc is not None:
         flight_search_status = "not_configured" if "DUFFEL_API_KEY" in str(last_exc) else f"failed: {last_exc}"
 
-    hotels = search_accommodation(destination_city, destination_country)
-    if budget_level != "Any":
-        levels = ["$", "$$", "$$$", "$$$$"]
-        max_idx = levels.index(budget_level) if budget_level in levels else len(levels) - 1
-        filtered = [h for h in hotels if h["price_level"] is None or levels.index(h["price_level"]) <= max_idx]
-        hotels = filtered or hotels  # never over-filter down to nothing
-
-    candidates = sorted(hotels, key=lambda h: (h["rating"] or 0), reverse=True)[:8]
-    curated = _curate_hotels(candidates, budget_level, preferences or {})
+    levels = ["$", "$$", "$$$", "$$$$"]
+    accommodation: dict[str, list[dict]] = {}
+    for city in cities:
+        hotels = search_accommodation(city, destination_country)
+        if budget_level != "Any":
+            max_idx = levels.index(budget_level) if budget_level in levels else len(levels) - 1
+            filtered = [h for h in hotels if h["price_level"] is None or levels.index(h["price_level"]) <= max_idx]
+            hotels = filtered or hotels  # never over-filter down to nothing
+        candidates = sorted(hotels, key=lambda h: (h["rating"] or 0), reverse=True)[:8]
+        curated = _curate_hotels(candidates, budget_level, preferences or {})
+        accommodation[city] = curated or candidates[:5]
 
     return {
         "flight_offers": flight_offers,
         "flight_recommendation": flight_recommendation,
         "flight_search_status": flight_search_status,
         "flight_links": flight_links,
-        "accommodation": curated or candidates[:5],
+        "flight_route": f"{origin_code} → {destination_code}",
+        "flight_destination_note": destination_airport.airport_note,  # e.g. "Kyoto has no airport — routes via KIX"
+        "accommodation": accommodation,  # {city: [hotels]}
     }

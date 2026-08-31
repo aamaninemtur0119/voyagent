@@ -1,8 +1,7 @@
-"""Voyagent — a multi-agent trip-planning orchestrator. One graph, three specialized agents
-(Eligibility, Logistics, Experience), real state passed between them, tool-failure recovery, and a
-human-in-the-loop approval gate before the one write action (Google Calendar). This UI is built to
-make that control flow visible, not hidden behind a single final answer — the agent-trace panel
-below the form shows exactly what ran, in what order, and what (if anything) failed."""
+"""Pack Your Bags — a multi-agent trip-planning orchestrator. One graph, three specialized agents
+(Eligibility, Logistics, Experience), real state passed between them, tool-failure recovery, and
+two independent human-in-the-loop approval gates before either write action (writing deadlines to
+Google Calendar, and emailing the finished itinerary to the traveler)."""
 
 import uuid
 from datetime import date, timedelta
@@ -12,12 +11,64 @@ from langgraph.types import Command
 
 from voyagent.graph import build_graph
 
-st.set_page_config(page_title="Voyagent", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="Pack Your Bags", page_icon="🧭", layout="wide")
+
+# --- ambience: a drifting aurora gradient behind a dark UI, frosted-glass panels on top.
+#     Pure CSS (no external images) so it always renders and never blocks on a CDN. ---
+st.markdown(
+    """
+    <style>
+      .stApp {
+        background:
+          radial-gradient(1100px 700px at 12% -10%, rgba(70,130,255,0.20), transparent 60%),
+          radial-gradient(1000px 800px at 108% 8%, rgba(0,220,190,0.16), transparent 55%),
+          radial-gradient(900px 900px at 50% 120%, rgba(245,166,35,0.14), transparent 55%),
+          linear-gradient(160deg, #0d0f13 0%, #14161a 45%, #10131a 100%);
+        background-attachment: fixed;
+      }
+      .stApp::before {
+        content: ""; position: fixed; inset: -20%; z-index: 0; pointer-events: none;
+        background:
+          radial-gradient(38% 32% at 20% 25%, rgba(88,150,255,0.22), transparent 70%),
+          radial-gradient(42% 34% at 82% 30%, rgba(0,224,196,0.18), transparent 70%),
+          radial-gradient(50% 40% at 55% 95%, rgba(245,166,35,0.16), transparent 70%);
+        filter: blur(30px);
+        animation: drift 26s ease-in-out infinite alternate;
+      }
+      @keyframes drift {
+        0%   { transform: translate3d(-3%, -2%, 0) scale(1.02); }
+        100% { transform: translate3d(4%, 3%, 0) scale(1.08); }
+      }
+      @media (prefers-reduced-motion: reduce) { .stApp::before { animation: none; } }
+      [data-testid="stAppViewContainer"] > .main { position: relative; z-index: 1; }
+      [data-testid="stHeader"] { background: transparent; }
+
+      h1 {
+        background: linear-gradient(92deg, #ffd27a, #7fe9d4 60%, #8fb8ff);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        letter-spacing: -0.01em;
+      }
+      /* frosted glass on bordered containers (the plan/result cards) */
+      [data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(255,255,255,0.035);
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 14px !important;
+        backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        box-shadow: 0 6px 24px rgba(0,0,0,0.28);
+      }
+      [data-testid="stTextInput"] input, [data-testid="stDateInput"] input, div[data-baseweb="select"] > div {
+        background: rgba(255,255,255,0.04) !important;
+        border-radius: 10px !important;
+      }
+      .stButton > button { border-radius: 10px; }
+      .stButton > button[kind="primary"] { box-shadow: 0 4px 16px rgba(245,166,35,0.35); }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 DESTINATIONS = ["Japan", "USA", "UK", "Schengen", "Australia"]
 PURPOSES = ["Tourism", "Business meeting", "Transit", "Study"]
-
-STATUS_ICON = {"done": "✅", "failed": "⚠️", "running": "⏳", "retrying": "🔁", "skipped": "⏭️"}
 
 
 def md_safe(text) -> str:
@@ -39,12 +90,6 @@ def get_graph():
     return build_graph()
 
 
-def render_trace(trace: list[dict]) -> None:
-    for entry in trace:
-        icon = STATUS_ICON.get(entry["status"], "•")
-        st.markdown(f"{icon} **{entry['agent']}** — {md_safe(entry['detail'])}")
-
-
 def _place_card(item: dict) -> None:
     with st.container(border=True):
         col1, col2 = st.columns([3, 1])
@@ -64,6 +109,23 @@ def _place_card(item: dict) -> None:
                 st.link_button("View / Book", item["maps_url"], use_container_width=True)
 
 
+def render_visa_sources(result: dict) -> None:
+    """The visa answer's sources, plus a note when a live official source overrode the reference
+    data — rendered straight from eligibility state, not the synthesized prose."""
+    elig = result.get("eligibility") or {}
+    sources = elig.get("sources") or []
+    if not sources and not elig.get("divergence_note"):
+        return
+    st.markdown("### 🛂 Visa information — sources")
+    if elig.get("divergence_note"):
+        st.warning(
+            f"A more current official source overrode the reference data: {md_safe(elig['divergence_note'])}"
+        )
+    for s in sources:
+        name = md_safe(s.get("name") or s.get("url") or "source")
+        st.markdown(f"- [{name}]({s['url']})" if s.get("url") else f"- {name}")
+
+
 def render_result_cards(result: dict) -> None:
     """Structured cards rendered directly from state — not from the LLM's synthesized prose —
     so a link or price can never be dropped/paraphrased away by the synthesis step."""
@@ -71,10 +133,12 @@ def render_result_cards(result: dict) -> None:
     experience = result.get("experience") or {}
 
     if logistics:
-        st.markdown("### ✈️ Flights")
+        route = logistics.get("flight_route")
+        st.markdown("### ✈️ Flights" + (f" &nbsp;<span style='font-weight:400;opacity:.65'>{md_safe(route)}</span>" if route else ""), unsafe_allow_html=True)
+        if logistics.get("flight_destination_note"):
+            st.caption(f"ℹ️ {md_safe(logistics['flight_destination_note'])}")
         status = logistics.get("flight_search_status", "not_attempted")
         if status == "ok" and logistics.get("flight_offers"):
-            st.caption("⚠️ Sandbox data (Duffel test mode) — real request/response, not live market fares.")
             if logistics.get("flight_recommendation"):
                 st.markdown(
                     f'<div style="border-left: 4px solid #F5A623; background: rgba(245,166,35,0.12); '
@@ -88,20 +152,28 @@ def render_result_cards(result: dict) -> None:
                     f"{o['airline']} — {o['price_total']} {o['currency']} — {o['stops']} stop(s) — {o['duration']}"
                 ))
                 if o.get("search_link"):
-                    label = "Search" if o["airline"] == "Duffel Airways" else f"Search {o['airline']}"
+                    airline_filtered = o.get("airline_iata") and o["airline_iata"] != "ZZ"
+                    label = f"Search {o['airline']}" if airline_filtered else "Search route"
                     oc2.link_button(label, o["search_link"], use_container_width=True)
-            st.caption("Sandbox prices aren't bookable — each link opens a real Google Flights search for that airline/route instead (except \"Duffel Airways\" itself, a sandbox-only placeholder no real search can filter to). More options:")
+        elif status == "ok":
+            st.caption("No flight offers came back for this route this time — use the search links below.")
+        elif status == "not_configured":
+            st.caption("Real-time flight search isn't connected — use the search links below.")
         else:
-            reason = "real-time flight search isn't connected yet" if status == "not_configured" else f"flight search hit an issue ({status})"
-            st.caption(f"No live flight prices this time — {reason}. Search directly:")
+            st.caption(f"Flight search hit an issue ({status}) — use the search links below.")
         link_cols = st.columns(len(logistics.get("flight_links", {})) or 1)
         for col, (label, url) in zip(link_cols, logistics.get("flight_links", {}).items()):
             col.link_button(label, url, use_container_width=True)
 
-        if logistics.get("accommodation"):
-            st.markdown("### 🏨 Accommodation")
-            for h in logistics["accommodation"]:
-                _place_card(h)
+        # accommodation is keyed by city: {"Tokyo": [...], "Kyoto": [...]} — every city the
+        # traveler listed gets its own hotel options, not just the primary one.
+        accommodation = logistics.get("accommodation") or {}
+        multi_city_stay = len(accommodation) > 1
+        for city, hotels in accommodation.items():
+            if hotels:
+                st.markdown("### 🏨 Accommodation" + (f" — {city}" if multi_city_stay else ""))
+                for h in hotels:
+                    _place_card(h)
 
     # experience is keyed by city: {"Tokyo": {"restaurants": [...], ...}, "Kyoto": {...}} — every
     # city the traveler listed gets real, searched data, not just the primary one.
@@ -115,11 +187,10 @@ def render_result_cards(result: dict) -> None:
                     _place_card(item)
 
 
-st.title("🧭 Voyagent")
+st.title("🧭 Pack Your Bags")
 st.caption(
-    "A multi-agent trip-planning orchestrator — Eligibility, Logistics, and Experience agents "
-    "coordinated by an orchestrator, with real state, tool-failure recovery, and a human approval "
-    "gate before anything gets written to your calendar."
+    "Tell it where you're headed once. Get back visa eligibility, the deadlines that come with it, "
+    "real flights and hotels, and a day-by-day plan."
 )
 
 if "thread_id" not in st.session_state:
@@ -132,7 +203,7 @@ if "awaiting_approval" not in st.session_state:
 graph = get_graph()
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
-form_col, trace_col = st.columns([2, 1])
+form_col = st.container()
 
 with form_col:
     st.subheader("Plan a trip")
@@ -169,15 +240,17 @@ with form_col:
     with p3:
         budget_level = st.selectbox("Budget", ["Any", "$", "$$", "$$$", "$$$$"])
 
+    traveler_email = st.text_input(
+        "Your email",
+        placeholder="you@example.com",
+        help="Required — the finished itinerary is emailed here once you approve it at the end.",
+    )
+
     plan_clicked = st.button("Plan My Trip", type="primary", use_container_width=True)
 
-with trace_col:
-    st.subheader("Agent trace")
-    trace_placeholder = st.container()
-
 if plan_clicked:
-    if not (nationality and destination_city and origin and duration):
-        st.warning("Please fill in nationality, destination city, and origin, and make sure the end date is after the start date.")
+    if not (nationality and destination_city and origin and duration and traveler_email.strip()):
+        st.warning("Please fill in nationality, destination city, origin, and your email, and make sure the end date is after the start date.")
     else:
         st.session_state.thread_id = str(uuid.uuid4())  # fresh run each time the form is submitted
         config = {"configurable": {"thread_id": st.session_state.thread_id}}
@@ -191,6 +264,7 @@ if plan_clicked:
             "duration": duration,
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
+            "traveler_email": traveler_email.strip(),
             "preferences": {
                 "dietary": dietary,
                 "family_friendly": family_friendly,
@@ -200,7 +274,7 @@ if plan_clicked:
             "agent_trace": [],
             "errors": [],
         }
-        with st.spinner("Running the agent pipeline (Eligibility → Logistics → Experience → synthesis)..."):
+        with st.spinner("Putting your trip together…"):
             try:
                 result = graph.invoke(initial_state, config=config)
             except Exception as e:  # noqa: BLE001 - surface in the UI rather than crashing the app
@@ -211,14 +285,16 @@ if plan_clicked:
             st.session_state.trip_result = result
             st.session_state.awaiting_approval = bool(result.get("__interrupt__"))
 
-if st.session_state.trip_result:
+if st.session_state.trip_result and st.session_state.trip_result.get("input_error"):
+    st.warning(f"⚠️ {md_safe(st.session_state.trip_result['input_error'])}")
+    st.caption("Nothing was planned — fix the fields above and hit **Plan My Trip** again.")
+
+elif st.session_state.trip_result:
     result = st.session_state.trip_result
-    with trace_col:
-        render_trace(result.get("agent_trace", []))
-        if result.get("errors"):
-            with st.expander(f"Errors encountered ({len(result['errors'])})"):
-                for e in result["errors"]:
-                    st.caption(md_safe(f"⚠️ {e}"))
+    if result.get("errors"):
+        with st.expander(f"⚠️ {len(result['errors'])} issue(s) hit while planning — the plan continued without them"):
+            for e in result["errors"]:
+                st.caption(md_safe(f"• {e}"))
 
     st.divider()
 
@@ -238,57 +314,81 @@ if st.session_state.trip_result:
             st.rerun()
 
         if itype == "calendar_write_approval":
-            st.subheader("🖐️ Human approval needed — Calendar")
+            st.subheader("📋 Review your plan")
+            last_rev = interrupt_payload.get("last_revision")
+            if last_rev:
+                lines = "\n".join(f"- {md_safe(ch)}" for ch in last_rev.get("changes", []))
+                st.success(f"✏️ **Revised:** {md_safe(last_rev.get('summary', ''))}\n\n{lines}")
             st.write(interrupt_payload["message"])
+
+            # --- decision block FIRST so it's visible without scrolling past the whole plan,
+            #     especially right after a revise. Plan details are shown below for reference. ---
+            replans_left = interrupt_payload.get("replans_remaining", 0)
+            feedback_key = f"feedback_{interrupt_payload.get('replans_so_far', 0)}"
+            if replans_left > 0:
+                feedback = st.text_input(
+                    "Want changes? Describe them, then hit Revise "
+                    "(e.g. 'push the trip back a month', 'cheapest hotels only', 'Kyoto instead of Tokyo') "
+                    f"— {replans_left} revision(s) left",
+                    key=feedback_key,
+                )
+            else:
+                feedback = ""
+                st.caption("No revisions left — approve the plan or cancel.")
+
+            # Three explicit outcomes, stable labels + explicit keys: a button whose label changes
+            # with other widget state can make Streamlit lose a click between the render that showed
+            # it and the one processing it (found live). Revise is disabled until there's feedback to
+            # act on, so it can never be an ambiguous no-op.
+            ac1, ac2, ac3 = st.columns(3)
+            if ac1.button("✅ Approve plan", type="primary", use_container_width=True, key="approve_btn"):
+                resume({"approved": True})
+            if ac2.button(
+                "✏️ Revise", use_container_width=True, key="revise_btn",
+                disabled=not (replans_left > 0 and feedback.strip()),
+            ):
+                resume({"approved": False, "feedback": st.session_state.get(feedback_key, "")})
+            if ac3.button("✖️ Cancel", use_container_width=True, key="cancel_btn"):
+                resume({"approved": False, "cancelled": True})
+            st.caption(
+                "**Approve** adds the visa deadlines to your calendar, then moves on to emailing your "
+                "itinerary. **Revise** re-plans with your changes. **Cancel** stops here — nothing is "
+                "added to your calendar or sent."
+            )
+
+            st.divider()
+            st.markdown("#### Your plan")
             if interrupt_payload.get("itinerary"):
                 with st.container(border=True):
                     st.markdown(md_safe(interrupt_payload["itinerary"]))
             for d in interrupt_payload.get("deadlines", []):
                 st.markdown(f"- **{md_safe(d['title'])}** — {d['date']} _( {d['basis']} )_ — {md_safe(d['reason'])}")
+            render_visa_sources(result)
             render_result_cards(result)
 
-            feedback_key = f"feedback_{interrupt_payload.get('replans_so_far', 0)}"
-            feedback = ""
-            if interrupt_payload.get("replans_remaining", 0) > 0:
-                feedback = st.text_input(
-                    "Or describe a change instead (e.g. 'push the trip back a month', 'cheapest hotels only') "
-                    f"— {interrupt_payload['replans_remaining']} replan(s) left",
-                    key=feedback_key,
-                )
-                if feedback.strip():
-                    st.caption("Rejecting will replan using this feedback instead of just cancelling.")
-            else:
-                st.caption("Replan limit reached — approve or reject only.")
-
-            # Stable labels + explicit keys on purpose: a button's identity defaults to its label
-            # text, so a label that changes based on other widget state (e.g. appending "— replan"
-            # only once feedback is non-empty) can make Streamlit lose track of a click between
-            # the render that showed it and the one processing it. Found live: a real click that
-            # silently did nothing.
-            ac1, ac2 = st.columns(2)
-            if ac1.button("✅ Approve — write to Google Calendar", type="primary", use_container_width=True, key="approve_btn"):
-                resume({"approved": True})
-            if ac2.button("❌ Reject", use_container_width=True, key="reject_btn"):
-                resume({"approved": False, "feedback": st.session_state.get(feedback_key, "")})
-
-        elif itype == "export_approval":
-            st.subheader("🖐️ Human approval needed — Save Itinerary")
+        elif itype == "email_approval":
+            st.subheader("📧 Your call — send this to your inbox?")
             st.write(interrupt_payload["message"])
-            st.caption(md_safe(interrupt_payload.get("preview", "")) + "...")
+            st.caption(f"To: **{md_safe(interrupt_payload.get('recipient', ''))}**")
+            with st.container(border=True):
+                st.markdown(md_safe(interrupt_payload.get("preview", "")) + "…")
 
             ec1, ec2 = st.columns(2)
-            if ec1.button("✅ Approve — save to file", type="primary", use_container_width=True):
+            if ec1.button("✅ Approve — send the email", type="primary", use_container_width=True, key="email_approve_btn"):
                 resume({"approved": True})
-            if ec2.button("❌ Reject — don't save", use_container_width=True):
+            if ec2.button("❌ Reject — don't send", use_container_width=True, key="email_reject_btn"):
                 resume({"approved": False})
+    elif result.get("cancelled"):
+        st.warning("Planning cancelled — nothing was added to your calendar or sent to your inbox. Adjust the form above and plan again.")
     else:
         if result.get("itinerary"):
             st.subheader("📋 Trip Briefing")
             st.markdown(md_safe(result["itinerary"]))
+        render_visa_sources(result)
         render_result_cards(result)
         if result.get("calendar_result"):
             cr = result["calendar_result"]
             st.caption(md_safe(f"Calendar: {cr.get('status')} — {cr.get('message', '')}"))
-        if result.get("export_result"):
-            er = result["export_result"]
-            st.caption(md_safe(f"Export: {er.get('status')}" + (f" — saved to `{er['path']}`" if er.get("path") else "")))
+        if result.get("email_result"):
+            er = result["email_result"]
+            st.caption(md_safe(f"Email: {er.get('status')} — {er.get('message', '')}"))
