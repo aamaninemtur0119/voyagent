@@ -6,8 +6,6 @@ This is a Week 3 ("Build Your AI Agent") project, built on top of the retrieval/
 
 **One-liner**: *Pack Your Bags helps a traveler get a complete, grounded trip plan in a Streamlit app, replacing the need to separately check visa rules, compare flights/hotels, and research restaurants/activities across different tabs and sites. It plans and executes autonomously using 3 specialized agents, hands off to a human before writing anything to Google Calendar, and I'll know it works when a traveler gets a usable plan even when one of the agents' tools fails along the way, not just on the happy path.*
 
-**Full write-up** (use case, happy path, multi-agent design, detailed tool calls, error handling, RAG, eval results, challenges): [`WRITEUP.md`](WRITEUP.md).
-
 ## Architecture
 
 ```
