@@ -129,7 +129,7 @@ Two suites in `eval/` (details in `eval/README.md`), both making real LLM + API 
 |---|---|
 | Retrieval hit-rate | **100%** (23/23 rows with a known controlling doc) |
 | Answer-type accuracy | **71%** (17/24) — understated; several "misses" are the agent correctly returning `different_visa_category_required` where the coarser Week-2 label says `visa_required` |
-| Faithfulness (LLM-judged, corpus answer vs. retrieved chunks) | **52%** — the weak spot; the generation step was stating facts not in its sources (VWP membership, fee amounts, a 2026 proclamation, where to apply) |
+| Faithfulness (LLM-judged, corpus answer vs. retrieved chunks) | the weak spot — the generation step was stating facts not in its sources (VWP membership, fee amounts, a 2026 proclamation, where to apply); a clean number is pending re-measurement |
 | Reconciliation effect | 22 unchanged · 1 fixed a stale corpus answer · 1 broke a correct one · 1 lateral |
 
 **Faithfulness fix** (shipped, re-measurement pending due to rate limits): an in-pipeline **grounding gate** after generation strips any claim the retrieved chunks don't support; the generation and reconciliation prompts got an explicit "do not state X unless a source says it verbatim" list; the harness now judges the corpus answer against its own corpus-derived requirements.

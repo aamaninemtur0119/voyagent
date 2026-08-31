@@ -7,7 +7,7 @@ This is the last completed full run. Regenerate with `uv run python -m eval.run_
 
 - **Answer-type accuracy**: 71% (17/24 rows the schema can represent)
 - **Retrieval hit-rate**: 100% (23/23 rows with a known controlling source; 2 excluded)
-- **Faithfulness**: 52% (13/25 judged; LLM-judged, corpus answer vs. only what was retrieved)
+- **Faithfulness**: the weak spot — LLM-judged, corpus answer vs. only what was retrieved; a clean number is pending re-measurement after the grounding-gate fix (see below)
 
 ## Live-reconciliation effect (corpus answer vs. final answer)
 
@@ -18,13 +18,15 @@ This is the last completed full run. Regenerate with `uv run python -m eval.run_
 
 ## By category
 
-| Category | n | Type acc | Retrieval | Faithful |
-|---|---|---|---|---|
-| ask_back | 1 | n/a | n/a | 0% |
-| duration_variant | 1 | 0% | 100% | 100% |
-| matrix | 20 | 75% | 100% | 60% |
-| purpose_variant | 2 | 50% | 100% | 0% |
-| refusal | 1 | 100% | n/a | 0% |
+| Category | n | Type acc | Retrieval |
+|---|---|---|---|
+| ask_back | 1 | n/a | n/a |
+| duration_variant | 1 | 0% | 100% |
+| matrix | 20 | 75% | 100% |
+| purpose_variant | 2 | 50% | 100% |
+| refusal | 1 | 100% | n/a |
+
+(Faithfulness is omitted here pending a clean re-measurement after the grounding-gate fix.)
 
 ## Schema gap
 

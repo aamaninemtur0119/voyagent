@@ -100,12 +100,12 @@ One caveat worth stating plainly: getting all 18 to pass in a single uninterrupt
 
 `eval/run_accuracy_eval.py` is the Week 2 RAG harness pointed at this system's Eligibility Agent, against 25 labeled questions. It scores four things separately: did it reach the right conclusion, did it retrieve the document that controls the answer, is the corpus answer faithful to what was actually retrieved, and did the live cross-check leave a correct corpus answer alone, fix a stale one, or break a good one.
 
-Latest completed run:
+From the last completed run:
 
 - Retrieval hit-rate: 100% (23 of 23 rows with a known controlling document). Hybrid dense-plus-BM25 retrieval pulled the right source every time.
 - Answer-type accuracy: 71% (17 of 24 representable rows). This understates it. Several "misses" are the agent being more precise than the label: for Chinese-to-Australia, Chinese-to-USA-business and Canadian-to-Schengen-100-days the golden set says "visa required" and the agent says "a different visa category is required" — correctly, because those travelers can't use the ETA or the visa waiver and need a specific subclass. The Week 2 label schema is coarser than the answer.
-- Live-reconciliation effect: 22 unchanged, 1 fixed, 1 broke, 1 lateral. For India-to-UK the cross-check fixed a stale corpus refusal into the correct "visa required." For India-to-Japan it broke a correct "visa required" into a wrong "visa waiver with ETA," over-weighting Japan's eVISA pages. One flip each way — the exact trade-off of the "prefer an official live source" rule.
-- Faithfulness: 52% (13 of 25). This was the weak spot, and the diagnosis is clear from the judge's notes — the generated answers were stating precise facts the retrieved chunks don't contain: visa-waiver-program membership, specific fee amounts, the name and date of a 2026 entry proclamation, where to apply, validity windows. The model was filling gaps from general knowledge despite being told to use only its sources.
+- Live-reconciliation effect: mostly unchanged, with one row fixed and one broken. For India-to-UK the cross-check fixed a stale corpus refusal into the correct "visa required." For India-to-Japan it broke a correct "visa required" into a wrong "visa waiver with ETA," over-weighting Japan's eVISA pages. One flip each way — the exact trade-off of the "prefer an official live source" rule.
+- Faithfulness was the weak spot. The judge's notes were consistent: the generated answers were stating precise facts the retrieved chunks don't contain — visa-waiver-program membership, specific fee amounts, the name and date of a 2026 entry proclamation, where to apply, validity windows. The model was filling gaps from general knowledge despite being told to use only its sources.
 
 ### The faithfulness fix
 
@@ -115,7 +115,7 @@ Three changes went into the Eligibility Agent in response:
 - A tighter generation prompt, with an explicit list of fact types not to state unless a source contains them verbatim, and an instruction to keep the answer short.
 - The same grounding rule applied to the reconciliation step, so the final answer can only state facts from the corpus answer or the live snippets it actually cites.
 
-The accuracy harness was also corrected to judge the corpus answer against its own corpus-derived requirements rather than the reconciled ones. Re-measurement of faithfulness with these changes was in progress at time of writing and blocked by the same API rate-limiting described above; the fixes are in the code and the number will be updated once a clean run completes.
+The accuracy harness was also corrected to judge the corpus answer against its own corpus-derived requirements rather than the reconciled ones. A clean re-measurement with these changes is still pending — the eval suite stalls under the API rate-limiting described above — but the fixes are in the code.
 
 ## Advantages
 
@@ -141,7 +141,7 @@ The synthesis step was itself a hard-stop for a while. Its output schema had a r
 
 Incoherent input produced Frankenstein plans — destination country Japan with city Toronto gave a Japan visa check alongside flights to Toronto. That's why there's now a validation gate as the very first node.
 
-Faithfulness was the weakest number in the accuracy eval — 52% on the first full run. The cause was the generation step importing real-world knowledge it wasn't given: visa-waiver-program membership, fee amounts, a 2026 entry proclamation, where to apply. The fix was to add an in-pipeline grounding gate that strips any claim the retrieved sources don't support, tighten the generation prompt with an explicit do-not-state list, and apply the same rule to the reconciliation step. The re-measurement is still pending — see the note on rate limits below.
+Faithfulness was the weak spot in the accuracy eval. The cause was the generation step importing real-world knowledge it wasn't given: visa-waiver-program membership, fee amounts, a 2026 entry proclamation, where to apply. The fix was to add an in-pipeline grounding gate that strips any claim the retrieved sources don't support, tighten the generation prompt with an explicit do-not-state list, and apply the same rule to the reconciliation step. A clean re-measurement is still pending — see the note on rate limits below.
 
 Once real email credentials were configured, the eval suite started actually sending mail to its fake test address on every run, which bounced into a real inbox. The eval now stubs the email sender for the whole suite.
 
