@@ -10,7 +10,7 @@ X-API-Key, JSON body {"query": ...}, response shape {"results": {"web": [{"url",
 
 import requests
 
-from voyagent.config import settings
+from pack_your_bags.config import settings
 
 SEARCH_URL = "https://ydc-index.io/v1/search"
 

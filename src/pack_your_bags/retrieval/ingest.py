@@ -3,9 +3,9 @@ from pathlib import Path
 import yaml
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from voyagent.config import settings
-from voyagent.retrieval.embeddings import embed_texts
-from voyagent.retrieval.vector_store import clear_namespace, upsert_chunks
+from pack_your_bags.config import settings
+from pack_your_bags.retrieval.embeddings import embed_texts
+from pack_your_bags.retrieval.vector_store import clear_namespace, upsert_chunks
 
 RULES_DIR = Path(__file__).resolve().parents[3] / "data" / "rules"
 

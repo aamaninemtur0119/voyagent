@@ -12,7 +12,7 @@ hotel."""
 
 import requests
 
-from voyagent.config import settings
+from pack_your_bags.config import settings
 
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 

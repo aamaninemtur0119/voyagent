@@ -21,7 +21,7 @@ def _tokenize(text: str) -> list[str]:
 def _get_index(namespace: str) -> tuple[BM25Okapi, tuple[dict, ...]]:
     # Imported lazily: ingest.py imports vector_store.py, which imports this module at load
     # time, so a module-level import here would be circular.
-    from voyagent.retrieval import ingest
+    from pack_your_bags.retrieval import ingest
 
     docs = ingest.load_documents()
     chunks = tuple(chunk for doc in docs for chunk in ingest.chunk_document(doc))

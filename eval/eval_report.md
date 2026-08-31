@@ -1,4 +1,4 @@
-# Voyagent Agentic-Behavior Eval
+# Pack Your Bags Agentic-Behavior Eval
 
 **4/4 checks passed** (running — 4/18 complete)
 

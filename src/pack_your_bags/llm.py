@@ -19,7 +19,7 @@ from typing import TypeVar
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 
-from voyagent.config import settings
+from pack_your_bags.config import settings
 
 llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
 

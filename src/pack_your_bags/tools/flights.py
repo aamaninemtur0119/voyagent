@@ -27,7 +27,7 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, Field
 
-from voyagent.llm import structured
+from pack_your_bags.llm import structured
 
 SKYSCANNER_CABIN = {
     "Economy": "economy",

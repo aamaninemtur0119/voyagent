@@ -1,4 +1,4 @@
-"""Eval harness for Voyagent's AGENTIC behavior — control flow, state, tool-failure recovery, and
+"""Eval harness for Pack Your Bags's AGENTIC behavior — control flow, state, tool-failure recovery, and
 human-in-the-loop — as code, not just a manually-run smoke test. This deliberately does not
 re-test RAG quality (the Eligibility Agent's retrieval/faithfulness eval already exists in the
 Week 2 project this was built on); it tests the properties that are specific to being an agentic
@@ -23,8 +23,8 @@ from pathlib import Path
 
 from langgraph.types import Command
 
-from voyagent.agents import logistics as logistics_module
-from voyagent.graph import MAX_REPLANS, build_graph
+from pack_your_bags.agents import logistics as logistics_module
+from pack_your_bags.graph import MAX_REPLANS, build_graph
 
 EVAL_DIR = Path(__file__).resolve().parent
 
@@ -96,8 +96,8 @@ def check_tool_failure_recovery(graph) -> Check:
 
 def check_structured_output_failure_degrades_not_crashes(graph) -> Check:
     c = Check("A malformed structured-output response degrades to the caller's default — never crashes the node")
-    import voyagent.llm as llm_mod
-    from voyagent.agents.logistics import LogisticsCuration
+    import pack_your_bags.llm as llm_mod
+    from pack_your_bags.agents.logistics import LogisticsCuration
 
     class _BoomChain:
         def invoke(self, *a, **k):
@@ -338,7 +338,7 @@ def check_official_live_source_can_override_corpus(graph) -> Check:
     # official source that contradicts the corpus. If the corpus already agrees with "ETA required"
     # this asserts 'both' instead.
     c = Check("Eligibility: an official live source contradicting the corpus drives the answer (primary_source live/both)")
-    import voyagent.agents.eligibility as elig_mod
+    import pack_your_bags.agents.eligibility as elig_mod
 
     def fake_search(query, max_results=5):
         return [{
@@ -368,7 +368,7 @@ def check_official_live_source_can_override_corpus(graph) -> Check:
 
 def check_live_search_outage_falls_back_to_corpus(graph) -> Check:
     c = Check("Eligibility: a live-search outage falls back to the corpus answer, sources still returned")
-    import voyagent.agents.eligibility as elig_mod
+    import pack_your_bags.agents.eligibility as elig_mod
 
     real = elig_mod.you_search
     elig_mod.you_search = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("simulated search outage"))
@@ -413,7 +413,7 @@ def _render_report(core, robustness, core_total: int, rob_total: int) -> str:
     done = core + robustness
     passed = sum(r.passed for r in done)
     lines = [
-        "# Voyagent Agentic-Behavior Eval\n",
+        "# Pack Your Bags Agentic-Behavior Eval\n",
         f"**{passed}/{len(done)} checks passed** "
         + (f"(running — {len(done)}/{core_total + rob_total} complete)\n" if len(done) < core_total + rob_total else "\n"),
         "## Core — control flow, state, tool failure, HITL\n",
@@ -436,7 +436,7 @@ def run(sections: tuple = ("core", "robustness")) -> None:
     # anything (a bad recipient would otherwise bounce into the real inbox on every run).
     import time
 
-    import voyagent.graph as graph_mod
+    import pack_your_bags.graph as graph_mod
     graph_mod.send_itinerary_email = lambda to_address, subject, body: {
         "status": "sent", "to": to_address, "message": "(eval stub — not actually sent)",
     }

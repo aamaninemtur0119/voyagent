@@ -28,7 +28,7 @@ Writes `eval_report.md`.
 uv run python -m eval.run_accuracy_eval
 ```
 
-The Week 2 RAG harness, brought into this repo and pointed at Voyagent's `eligibility.run`, against
+The Week 2 RAG harness, brought into this repo and pointed at the Eligibility Agent's `run()`, against
 `golden_set.csv` (25 labeled visa-requirements questions). Four axes, kept separate:
 
 - **answer_type accuracy** — did it reach the right conclusion?

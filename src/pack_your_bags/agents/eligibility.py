@@ -23,10 +23,10 @@ from typing import Literal
 from langchain_text_splitters import RecursiveCharacterTextSplitter  # noqa: F401 - re-exported for parity/tests
 from pydantic import BaseModel, Field
 
-from voyagent.llm import structured
-from voyagent.retrieval.embeddings import embed_texts
-from voyagent.retrieval.vector_store import retrieve as vector_retrieve
-from voyagent.tools.you_search import search as you_search
+from pack_your_bags.llm import structured
+from pack_your_bags.retrieval.embeddings import embed_texts
+from pack_your_bags.retrieval.vector_store import retrieve as vector_retrieve
+from pack_your_bags.tools.you_search import search as you_search
 
 ANSWER_TYPES = Literal[
     "visa_required",

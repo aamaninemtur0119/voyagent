@@ -1,7 +1,7 @@
 [project]
-name = "voyagent"
+name = "pack-your-bags"
 version = "0.1.0"
-description = "Voyagent — multi-agent trip-planning orchestrator (LangGraph): eligibility, logistics, and experience agents coordinated by an orchestrator, with real state, tool-failure recovery, and human-in-the-loop approval before any write action."
+description = "Pack Your Bags — multi-agent trip-planning orchestrator (LangGraph): eligibility, logistics, and experience agents coordinated by an orchestrator, with real state, tool-failure recovery, and human-in-the-loop approval before any write action."
 authors = [
     { name = "Aamani Nemtur", email = "aamani.nemtur0119@gmail.com" }
 ]

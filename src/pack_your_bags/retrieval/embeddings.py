@@ -1,6 +1,6 @@
 from openai import OpenAI
 
-from voyagent.config import settings
+from pack_your_bags.config import settings
 
 _client = OpenAI(api_key=settings.openai_api_key)
 

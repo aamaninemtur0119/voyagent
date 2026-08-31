@@ -1,7 +1,7 @@
 from pinecone import Pinecone
 
-from voyagent.config import settings
-from voyagent.retrieval.sparse_store import sparse_search
+from pack_your_bags.config import settings
+from pack_your_bags.retrieval.sparse_store import sparse_search
 
 NAMESPACE = "entry_requirements"  # default namespace, kept for backward compatibility
 RERANK_MODEL = "bge-reranker-v2-m3"

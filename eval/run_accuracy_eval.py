@@ -1,6 +1,6 @@
 """Accuracy / RAG evaluation for the Eligibility Agent, against `eval/golden_set.csv` (25 labeled
 visa-requirements questions). This is the Week 2 harness, brought into the Week 3 repo and adapted
-to Voyagent's eligibility pipeline — which now also reconciles the corpus answer against live
+to Pack Your Bags's eligibility pipeline — which now also reconciles the corpus answer against live
 You.com search, so a fourth axis tracks what that reconciliation did.
 
 Four independent axes, deliberately kept separate rather than collapsed into one score:
@@ -23,8 +23,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from voyagent.agents.eligibility import run as eligibility_run
-from voyagent.llm import structured
+from pack_your_bags.agents.eligibility import run as eligibility_run
+from pack_your_bags.llm import structured
 
 EVAL_DIR = Path(__file__).resolve().parent
 GOLDEN_SET_PATH = EVAL_DIR / "golden_set.csv"
@@ -235,7 +235,7 @@ def _write_report(results: list[dict]) -> None:
     if unsupported_type_rows:
         lines.append("## Schema gap\n")
         lines.append(
-            f"{len(unsupported_type_rows)} golden-set row(s) expect an `answer_type` Voyagent's `ANSWER_TYPES` "
+            f"{len(unsupported_type_rows)} golden-set row(s) expect an `answer_type` Pack Your Bags's `ANSWER_TYPES` "
             "has no value for (e.g. `ask_back`). Not a retrieval/generation failure — a deliberate schema "
             "limitation (the pipeline can't ask a clarifying question before committing to an answer_type).\n"
         )

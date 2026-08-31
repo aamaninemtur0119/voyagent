@@ -17,7 +17,7 @@ how every other tool in this project handles failure.
 
 import requests
 
-from voyagent.config import settings
+from pack_your_bags.config import settings
 
 SEARCH_URL = "https://api.duffel.com/air/offer_requests"
 DUFFEL_VERSION = "v2"

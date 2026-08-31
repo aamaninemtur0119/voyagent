@@ -2,8 +2,6 @@
 
 Pack Your Bags is a multi-agent trip-planning orchestrator. Give it a traveler's situation once — nationality, destination, dates, preferences — and an orchestrator coordinates three specialized agents to produce a complete trip briefing, with real state passed between steps, tool-failure recovery, and two independent human-approval gates before either write action (writing deadlines to a calendar, and emailing the finished itinerary to the traveler).
 
-*(The Python package and repo are still named `voyagent` — the internal module name, not the product name.)*
-
 This is a Week 3 ("Build Your AI Agent") project, built on top of the retrieval/live-API infrastructure from a Week 2 RAG project ([crosscheck-travel-agent](https://github.com/aamaninemtur0119/crosscheck-travel-agent)) — the tools are reused; the orchestration layer (state, control flow, failure recovery, human-in-the-loop) is new.
 
 **One-liner**: *Pack Your Bags helps a traveler get a complete, grounded trip plan in a Streamlit app, replacing the need to separately check visa rules, compare flights/hotels, and research restaurants/activities across different tabs and sites. It plans and executes autonomously using 3 specialized agents, hands off to a human before writing anything to Google Calendar, and I'll know it works when a traveler gets a usable plan even when one of the agents' tools fails along the way, not just on the happy path.*
@@ -26,14 +24,6 @@ START ─► Validate ─► Eligibility Agent ─► (conditional) ─► [Logi
                              then reconciled against live You.com search              places, activities) + MCP                                MAX_REPLANS=2); next screen
                              (official live source wins), sources tagged corpus/live  flight search (Duffel) w/                                shows old → new values
                                                                                      deep-link fallback
-     RAG: Pinecone (hybrid                                            Google Places API (accommodation,
-     dense+BM25) + rerank,                                            restaurants, places, activities)
-     deterministic evidence                                           + MCP-based real flight search
-     gate + topic-mismatch                                            (Duffel) with deep-link fallback
-     check, then reconciled
-     against live You.com search
-     (official live source wins),
-     sources tagged corpus/live
 ```
 
 Before any agent runs, a **validation gate** checks the request is coherent — every destination city has to plausibly belong to the destination country (typos tolerated). An incoherent request (e.g. destination country Japan, city Toronto) routes straight to `END` with a plain-language fix-it message instead of producing a Frankenstein plan that checks a Japan visa while pricing flights to Toronto. It fails open: if the check itself errors, planning proceeds.
@@ -60,8 +50,8 @@ Results (hotels, restaurants, places, activities, flight offers) are rendered as
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+.
 
 ```bash
-git clone https://github.com/aamaninemtur0119/voyagent.git
-cd voyagent
+git clone https://github.com/aamaninemtur0119/pack-your-bags.git
+cd pack-your-bags
 uv sync
 ```
 
@@ -86,7 +76,7 @@ SMTP_PASSWORD=...
 SMTP_FROM=...             # defaults to SMTP_USERNAME when blank
 ```
 
-(Reuses the same visa-rules corpus and Pinecone index as the Week 2 project — if you haven't ingested it yet: `uv run python -m voyagent.retrieval.ingest`.)
+(Reuses the same visa-rules corpus and Pinecone index as the Week 2 project — if you haven't ingested it yet: `uv run python -m pack_your_bags.retrieval.ingest`.)
 
 Run it:
 
@@ -103,7 +93,7 @@ Both write actions are optional and degrade gracefully:
 
 ```
 app.py                          Streamlit UI — form + approval gates + structured result cards
-src/voyagent/
+src/pack_your_bags/
 ├── graph.py                    The orchestrator: LangGraph StateGraph, retry/failure handling, HITL
 ├── state.py                    Shared TripState schema
 ├── llm.py                      Shared LLM instance + resilient structured-output helper (retry → repair → default)

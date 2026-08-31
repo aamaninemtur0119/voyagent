@@ -1,14 +1,14 @@
 """MCP server exposing real flight search as a tool, over stdio. Run as a subprocess by the
-Logistics Agent's MCP client (see agents/logistics.py) — this is the one tool in Voyagent exposed
+Logistics Agent's MCP client (see agents/logistics.py) — this is the one tool in Pack Your Bags exposed
 via the Model Context Protocol rather than a direct Python import, since it's new capability being
 added specifically to demonstrate that pattern, not a retrofit of the already-tested tools.
 """
 
 from mcp.server.fastmcp import FastMCP
 
-from voyagent.tools.duffel import search_flights as _search_flights_impl
+from pack_your_bags.tools.duffel import search_flights as _search_flights_impl
 
-mcp = FastMCP("voyagent-flights")
+mcp = FastMCP("pack-your-bags-flights")
 
 
 @mcp.tool()

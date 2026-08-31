@@ -5,8 +5,8 @@ view, or amenity the data doesn't contain."""
 
 from pydantic import BaseModel, Field
 
-from voyagent.llm import structured
-from voyagent.tools.google_places import search_activities, search_places_to_visit, search_restaurants
+from pack_your_bags.llm import structured
+from pack_your_bags.tools.google_places import search_activities, search_places_to_visit, search_restaurants
 
 
 class Pick(BaseModel):

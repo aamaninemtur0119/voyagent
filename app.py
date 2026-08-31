@@ -9,7 +9,7 @@ from datetime import date, timedelta
 import streamlit as st
 from langgraph.types import Command
 
-from voyagent.graph import build_graph
+from pack_your_bags.graph import build_graph
 
 st.set_page_config(page_title="Pack Your Bags", page_icon="🧭", layout="wide")
 

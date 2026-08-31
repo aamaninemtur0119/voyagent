@@ -5,7 +5,7 @@ inventing a price, amenity, or fact the data doesn't contain. Note: Duffel's fre
 real API responses over real airline/route data, but sandbox prices, not live market fares —
 disclosed as such in the UI, not presented as real live pricing.
 
-Flights are the one tool in Voyagent exposed via the Model Context Protocol rather than a direct
+Flights are the one tool in Pack Your Bags exposed via the Model Context Protocol rather than a direct
 Python import (see mcp_servers/flights_server.py) — new capability, added specifically to
 demonstrate that pattern. A tool-level MCP failure surfaces as a text-content error block, not a
 raised Python exception (verified empirically, not assumed) — this module translates that into a
@@ -22,15 +22,15 @@ from datetime import date
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from pydantic import BaseModel, Field
 
-from voyagent.llm import structured
-from voyagent.tools.flights import build_airline_search_link, build_flight_links, resolve_airport
-from voyagent.tools.google_places import search_accommodation
+from pack_your_bags.llm import structured
+from pack_your_bags.tools.flights import build_airline_search_link, build_flight_links, resolve_airport
+from pack_your_bags.tools.google_places import search_accommodation
 
 _MCP_SERVERS = {
     "flights": {
         "command": "uv",
         "args": ["run", "--directory", str(__import__("pathlib").Path(__file__).resolve().parents[3]),
-                 "python", "-m", "voyagent.mcp_servers.flights_server"],
+                 "python", "-m", "pack_your_bags.mcp_servers.flights_server"],
         "transport": "stdio",
     }
 }

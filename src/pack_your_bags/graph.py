@@ -16,11 +16,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
-from voyagent.agents import eligibility, experience, logistics
-from voyagent.llm import structured
-from voyagent.state import TripState
-from voyagent.tools.calendar_actions import Deadline, extract_deadlines, write_to_calendar
-from voyagent.tools.email_actions import send_itinerary_email
+from pack_your_bags.agents import eligibility, experience, logistics
+from pack_your_bags.llm import structured
+from pack_your_bags.state import TripState
+from pack_your_bags.tools.calendar_actions import Deadline, extract_deadlines, write_to_calendar
+from pack_your_bags.tools.email_actions import send_itinerary_email
 
 MAX_REPLANS = 2
 

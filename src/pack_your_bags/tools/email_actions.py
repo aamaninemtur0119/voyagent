@@ -16,7 +16,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 
-from voyagent.config import settings
+from pack_your_bags.config import settings
 
 
 def _configured() -> bool:

@@ -9,7 +9,7 @@ from googleapiclient.discovery import build
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field
 
-from voyagent.config import settings
+from pack_your_bags.config import settings
 
 _llm = ChatAnthropic(model="claude-sonnet-5", api_key=settings.anthropic_api_key)
 
